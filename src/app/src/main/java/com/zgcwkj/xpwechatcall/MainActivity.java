@@ -128,6 +128,8 @@ public class MainActivity extends Activity {
 
         btnAdd.setOnClickListener(v -> showFriendDialog(null));
         btnImport.setOnClickListener(v -> importFromWeChat());
+        findViewById(R.id.btn_api).setOnClickListener(v ->
+            startActivity(new Intent(this, TriggerSettingsActivity.class)));
         btnLogRefresh.setOnClickListener(v -> showLog());
         btnLogClear.setOnClickListener(v -> clearLog());
         findViewById(R.id.tab_home).setOnClickListener(v -> switchTab(true));

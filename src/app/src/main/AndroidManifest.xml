@@ -5,6 +5,13 @@
     <uses-permission android:name="com.android.launcher.permission.INSTALL_SHORTCUT" />
     <uses-permission android:name="com.android.launcher.permission.UNINSTALL_SHORTCUT" />
 
+    <!-- 外部触发服务：HTTP 监听、前台保活、结果回调 -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+
     <!-- Android 11+ 需要声明要查询/拉起的目标包 -->
     <queries>
         <package android:name="com.tencent.mm" />
@@ -15,7 +22,8 @@
         android:icon="@drawable/ic_launcher"
         android:roundIcon="@drawable/ic_launcher"
         android:allowBackup="false"
-        android:supportsRtl="true">
+        android:supportsRtl="true"
+        android:usesCleartextTraffic="true">
 
         <!-- 主界面：管理好友列表并创建桌面图标 -->
         <activity
@@ -47,6 +55,37 @@
             android:name=".FriendProvider"
             android:authorities="com.zgcwkj.xpwechatcall.friends"
             android:exported="true" />
+
+        <!-- 外部触发 Provider：Tasker / adb / 其它 App 可调用，需 Token -->
+        <provider
+            android:name=".trigger.TriggerProvider"
+            android:authorities="com.zgcwkj.xpwechatcall.trigger"
+            android:exported="true" />
+
+        <!-- 外部触发设置页 -->
+        <activity
+            android:name=".TriggerSettingsActivity"
+            android:exported="false"
+            android:theme="@style/AppTheme" />
+
+        <!-- 外部触发 HTTP 服务（前台服务） -->
+        <service
+            android:name=".trigger.TriggerService"
+            android:exported="false"
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="webhook call trigger" />
+        </service>
+
+        <!-- 开机恢复外部触发服务 -->
+        <receiver
+            android:name=".trigger.BootReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+            </intent-filter>
+        </receiver>
 
         <!-- 桌面控件配置页：拖出控件后选择好友与通话类型 -->
         <activity

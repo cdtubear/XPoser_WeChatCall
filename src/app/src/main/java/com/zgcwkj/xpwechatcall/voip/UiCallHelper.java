@@ -1,6 +1,7 @@
 package com.zgcwkj.xpwechatcall.voip;
 
 import android.app.Activity;
+import android.content.Context;
 import android.content.Intent;
 import android.os.Handler;
 import android.os.Looper;
@@ -9,7 +10,9 @@ import android.view.ViewGroup;
 import android.widget.AdapterView;
 import android.widget.TextView;
 
+import com.zgcwkj.comm.CallReporter;
 import com.zgcwkj.comm.LogHelp;
+import com.zgcwkj.comm.TriggerContract;
 
 import de.robv.android.xposed.XposedBridge;
 
@@ -40,6 +43,13 @@ public class UiCallHelper {
     private static volatile String sWxid;
     private static volatile boolean sVideo;
 
+    /** 外部触发的请求标识，桌面快捷方式/控件为空 */
+    private static volatile String sRequestId;
+    /** 本次流程是否已结束，用于超时看门狗 */
+    private static volatile boolean sFinished = true;
+    /** 是否已上报聊天页打开，避免多次 onResume 重复上报 */
+    private static volatile boolean sChatReported;
+
     /** 当前步骤与重试次数 */
     private static volatile int sStep;
     private static volatile int sRetry;
@@ -49,12 +59,17 @@ public class UiCallHelper {
 
     /**
      * 打开好友聊天页并发起通话
+     *
+     * @param requestId 外部触发的请求标识，可为 null
      */
-    public static void startCall(Activity activity, String wxid, boolean video) {
+    public static void startCall(Activity activity, String wxid, boolean video, String requestId) {
         sWxid = wxid;
         sVideo = video;
+        sRequestId = requestId;
         sStep = 0;
         sRetry = 0;
+        sChatReported = false;
+        sFinished = false;
         try {
             var intent = new Intent();
             intent.setClassName("com.tencent.mm", CLS_CHATTING_UI);
@@ -63,7 +78,23 @@ public class UiCallHelper {
             log("open chat ok, wxid=" + wxid + " video=" + video);
         } catch (Throwable e) {
             log("open chat failed: " + e);
+            sFinished = true;
+            report(activity, TriggerContract.S_FAILED,
+                TriggerContract.E_CHAT_OPEN_FAILED, e.toString());
+            sWxid = null;
+            return;
         }
+        var id = requestId;
+        postDelayed(() -> {
+            if (sFinished || id == null || !id.equals(sRequestId)) {
+                return;
+            }
+            log("call flow timeout");
+            report(activity, TriggerContract.S_FAILED,
+                TriggerContract.E_TIMEOUT, "call flow did not complete");
+            sFinished = true;
+            sWxid = null;
+        }, 25_000);
     }
 
     /**
@@ -73,6 +104,10 @@ public class UiCallHelper {
     public static void onChatResumed(Activity activity) {
         if (sWxid == null || sStep < 0) {
             return;
+        }
+        if (!sChatReported) {
+            sChatReported = true;
+            report(activity, TriggerContract.S_CHAT_OPENED, null, null);
         }
         var step = sStep;
         sStep = -1;
@@ -86,6 +121,10 @@ public class UiCallHelper {
         if (sRetry > 12) {
             log("give up at step " + step);
             sStep = -1;
+            sFinished = true;
+            report(activity, TriggerContract.S_FAILED,
+                TriggerContract.E_CALL_BUTTON_NOT_FOUND, "step=" + step);
+            sWxid = null;
             return;
         }
         var root = activity.getWindow().getDecorView();
@@ -96,6 +135,7 @@ public class UiCallHelper {
             if (more != null) {
                 click(more);
                 log("step0: clicked + button");
+                report(activity, TriggerContract.S_PANEL_OPENED, null, null);
                 done = true;
             }
         } else if (step == 1) {
@@ -103,6 +143,7 @@ public class UiCallHelper {
             if (entry != null) {
                 click(entry);
                 log("step1: clicked call entry");
+                report(activity, TriggerContract.S_CALL_MENU_OPENED, null, null);
                 done = true;
             }
         } else {
@@ -113,6 +154,9 @@ public class UiCallHelper {
                 click(option);
                 log("step2: clicked " + label);
                 sStep = -1;
+                sFinished = true;
+                report(activity, TriggerContract.S_SUCCESS, null, null);
+                sWxid = null;
                 return;
             }
         }
@@ -312,6 +356,13 @@ public class UiCallHelper {
 
     private static void postDelayed(Runnable action, long delay) {
         new Handler(Looper.getMainLooper()).postDelayed(action, delay);
+    }
+
+    /**
+     * 把步骤结果回传给模块进程，request_id 为空时自动忽略
+     */
+    private static void report(Context context, String state, String error, String detail) {
+        CallReporter.report(context, sRequestId, state, error, detail);
     }
 
     private static void log(String message) {

@@ -2,6 +2,10 @@ plugins {
     id 'com.android.application'
 }
 
+// release 签名信息由环境变量注入，未提供时产出 unsigned 包（供本地调试/CI 的 debug 构建使用）
+def releaseKeystoreFile = System.getenv('XP_KEYSTORE_FILE')
+def hasReleaseKeystore = releaseKeystoreFile != null && !releaseKeystoreFile.trim().isEmpty() && file(releaseKeystoreFile).exists()
+
 android {
     namespace 'com.zgcwkj.xpwechatcall'
     compileSdk 36
@@ -13,6 +17,24 @@ android {
         targetSdk 36
         versionCode 261005
         versionName "1.0"
+    }
+
+    signingConfigs {
+        debug {
+            v1SigningEnabled true
+            v2SigningEnabled true
+        }
+        release {
+            v1SigningEnabled true
+            v2SigningEnabled true
+
+            if (hasReleaseKeystore) {
+                storeFile file(releaseKeystoreFile)
+                storePassword System.getenv('XP_KEYSTORE_PASSWORD')
+                keyAlias System.getenv('XP_KEY_ALIAS')
+                keyPassword System.getenv('XP_KEY_PASSWORD')
+            }
+        }
     }
 
     buildTypes {
@@ -27,17 +49,11 @@ android {
             debuggable false
 
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
-        }
-    }
 
-    signingConfigs {
-        debug {
-            v1SigningEnabled true
-            v2SigningEnabled true
-        }
-        release {
-            v1SigningEnabled true
-            v2SigningEnabled true
+            // 提供 keystore 时才签名，否则仍可产出 unsigned 包
+            if (hasReleaseKeystore) {
+                signingConfig signingConfigs.release
+            }
         }
     }
 

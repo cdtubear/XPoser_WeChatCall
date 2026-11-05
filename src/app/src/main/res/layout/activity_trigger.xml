@@ -1,0 +1,367 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@color/background"
+    android:orientation="vertical">
+
+    <LinearLayout
+        android:id="@+id/title_bar"
+        android:layout_width="match_parent"
+        android:layout_height="48dp"
+        android:background="@color/primary"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:paddingStart="4dp"
+        android:paddingEnd="16dp">
+
+        <TextView
+            android:id="@+id/btn_back"
+            android:layout_width="44dp"
+            android:layout_height="match_parent"
+            android:background="?android:attr/selectableItemBackground"
+            android:clickable="true"
+            android:focusable="true"
+            android:gravity="center"
+            android:text="‹"
+            android:textColor="@android:color/white"
+            android:textSize="30sp" />
+
+        <TextView
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="外部触发"
+            android:textColor="@android:color/white"
+            android:textSize="19sp"
+            android:textStyle="bold" />
+
+        <TextView
+            android:id="@+id/tv_status"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="已停止"
+            android:textColor="@android:color/white"
+            android:textSize="12sp" />
+    </LinearLayout>
+
+    <ScrollView
+        android:id="@+id/scroll"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:fillViewport="true"
+        android:scrollbars="none">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:padding="14dp">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:background="@color/surface"
+                android:orientation="vertical"
+                android:padding="14dp">
+
+                <Switch
+                    android:id="@+id/sw_enable"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="启用外部触发服务"
+                    android:textColor="@color/text_primary"
+                    android:textSize="16sp" />
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="6dp"
+                    android:text="开启后会常驻一个前台通知，webhook 才能随时调用。修改监听地址或端口后请点击下方「保存并重启」。"
+                    android:textColor="@color/text_hint"
+                    android:textSize="12sp" />
+            </LinearLayout>
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="16dp"
+                android:layout_marginBottom="6dp"
+                android:text="访问 Token"
+                android:textColor="@color/text_secondary"
+                android:textSize="13sp" />
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:background="@color/surface"
+                android:orientation="vertical"
+                android:padding="14dp">
+
+                <TextView
+                    android:id="@+id/tv_token"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:background="@color/background"
+                    android:fontFamily="monospace"
+                    android:padding="10dp"
+                    android:textColor="@color/text_primary"
+                    android:textIsSelectable="true"
+                    android:textSize="12sp" />
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="10dp"
+                    android:orientation="horizontal">
+
+                    <Button
+                        android:id="@+id/btn_copy_token"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:text="复制" />
+
+                    <Button
+                        android:id="@+id/btn_reset_token"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_marginStart="10dp"
+                        android:layout_weight="1"
+                        android:text="重置 Token" />
+                </LinearLayout>
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="6dp"
+                    android:text="所有接口都必须携带 Authorization: Bearer &lt;Token&gt;。重置后旧的调用方会立即失效。"
+                    android:textColor="@color/text_hint"
+                    android:textSize="12sp" />
+            </LinearLayout>
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="16dp"
+                android:layout_marginBottom="6dp"
+                android:text="监听地址"
+                android:textColor="@color/text_secondary"
+                android:textSize="13sp" />
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:background="@color/surface"
+                android:orientation="vertical"
+                android:padding="14dp">
+
+                <EditText
+                    android:id="@+id/et_bind"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:hint="0.0.0.0"
+                    android:inputType="text"
+                    android:maxLines="1"
+                    android:textColor="@color/text_primary"
+                    android:textSize="14sp" />
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="2dp"
+                    android:text="0.0.0.0 = 监听所有网卡；建议填 Tailscale/WireGuard 地址，避免暴露在公共 Wi-Fi。"
+                    android:textColor="@color/text_hint"
+                    android:textSize="12sp" />
+
+                <EditText
+                    android:id="@+id/et_port"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
+                    android:hint="端口"
+                    android:inputType="number"
+                    android:maxLines="1"
+                    android:textColor="@color/text_primary"
+                    android:textSize="14sp" />
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="2dp"
+                    android:text="默认 8790。修改后需要重启服务。"
+                    android:textColor="@color/text_hint"
+                    android:textSize="12sp" />
+            </LinearLayout>
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="16dp"
+                android:layout_marginBottom="6dp"
+                android:text="触发行为"
+                android:textColor="@color/text_secondary"
+                android:textSize="13sp" />
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:background="@color/surface"
+                android:orientation="vertical"
+                android:padding="14dp">
+
+                <Switch
+                    android:id="@+id/sw_unlock"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="锁屏时自动唤醒并解锁（仅滑动锁）"
+                    android:textColor="@color/text_primary"
+                    android:textSize="15sp" />
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="4dp"
+                    android:text="通过 root 执行 input / wm 命令。设置了密码、PIN 或图案锁时无法自动解锁，会返回 DEVICE_LOCKED。"
+                    android:textColor="@color/text_hint"
+                    android:textSize="12sp" />
+
+                <EditText
+                    android:id="@+id/et_rate"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="10dp"
+                    android:hint="每分钟最大请求数"
+                    android:inputType="number"
+                    android:maxLines="1"
+                    android:textColor="@color/text_primary"
+                    android:textSize="14sp" />
+
+                <EditText
+                    android:id="@+id/et_timeout"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
+                    android:hint="结果超时秒数"
+                    android:inputType="number"
+                    android:maxLines="1"
+                    android:textColor="@color/text_primary"
+                    android:textSize="14sp" />
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="2dp"
+                    android:text="超时后状态变为 FAILED / TIMEOUT。限流填 0 表示不限。"
+                    android:textColor="@color/text_hint"
+                    android:textSize="12sp" />
+            </LinearLayout>
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="16dp"
+                android:layout_marginBottom="6dp"
+                android:text="结果回调（可选）"
+                android:textColor="@color/text_secondary"
+                android:textSize="13sp" />
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:background="@color/surface"
+                android:orientation="vertical"
+                android:padding="14dp">
+
+                <EditText
+                    android:id="@+id/et_callback"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:hint="允许回调的域名，逗号分隔"
+                    android:inputType="text"
+                    android:maxLines="2"
+                    android:textColor="@color/text_primary"
+                    android:textSize="14sp" />
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="2dp"
+                    android:text="留空表示不发送回调，只支持轮询。回调带 X-Xp-Signature: sha256=HMAC(请求体, Token)。"
+                    android:textColor="@color/text_hint"
+                    android:textSize="12sp" />
+
+                <EditText
+                    android:id="@+id/et_packages"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="10dp"
+                    android:hint="Provider 包名白名单，逗号分隔（可选）"
+                    android:inputType="text"
+                    android:maxLines="2"
+                    android:textColor="@color/text_primary"
+                    android:textSize="14sp" />
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="2dp"
+                    android:text="留空表示只校验 Token。HTTP 接口不受此项影响。"
+                    android:textColor="@color/text_hint"
+                    android:textSize="12sp" />
+            </LinearLayout>
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="16dp"
+                android:orientation="horizontal">
+
+                <Button
+                    android:id="@+id/btn_save"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="保存并重启" />
+
+                <Button
+                    android:id="@+id/btn_test"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="10dp"
+                    android:layout_weight="1"
+                    android:text="测试状态" />
+
+                <Button
+                    android:id="@+id/btn_root"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="10dp"
+                    android:layout_weight="1"
+                    android:text="检查 root" />
+            </LinearLayout>
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="18dp"
+                android:text="接口示例"
+                android:textColor="@color/text_secondary"
+                android:textSize="13sp" />
+
+            <TextView
+                android:id="@+id/tv_hint"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="6dp"
+                android:background="@color/surface"
+                android:fontFamily="monospace"
+                android:padding="12dp"
+                android:textColor="@color/text_secondary"
+                android:textIsSelectable="true"
+                android:textSize="11sp" />
+        </LinearLayout>
+    </ScrollView>
+</LinearLayout>

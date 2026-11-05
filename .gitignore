@@ -3,6 +3,10 @@
 build/
 .*/
 
+# 保留 GitHub Actions 工作流，其余隐藏目录仍忽略
+!.github/
+!.github/**
+
 # Local configuration file (sdk path, etc)
 local.properties
 build_install.bat

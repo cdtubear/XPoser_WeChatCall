@@ -6,6 +6,7 @@ import android.os.Bundle;
 
 import com.zgcwkj.comm.LogHelp;
 import com.zgcwkj.comm.ShortcutHelp;
+import com.zgcwkj.comm.TriggerContract;
 import com.zgcwkj.xpwechatcall.voip.UiCallHelper;
 
 import de.robv.android.xposed.XC_MethodHook;
@@ -90,15 +91,18 @@ public class WeChatHook {
             return;
         }
         var callType = intent.getStringExtra(ShortcutHelp.EXTRA_CALL_TYPE);
+        var requestId = intent.getStringExtra(TriggerContract.EXTRA_REQUEST_ID);
 
         // 清理参数，避免微信复用同一 Intent 时重复发起通话
         intent.removeExtra(ShortcutHelp.EXTRA_WXID);
         intent.removeExtra(ShortcutHelp.EXTRA_NICKNAME);
         intent.removeExtra(ShortcutHelp.EXTRA_CALL_TYPE);
+        intent.removeExtra(TriggerContract.EXTRA_REQUEST_ID);
 
         var video = !ShortcutHelp.CALL_VOICE.equals(callType);
-        log("start call wxid=" + wxid + " video=" + video);
-        UiCallHelper.startCall(activity, wxid, video);
+        log("start call wxid=" + wxid + " video=" + video
+            + (requestId == null ? "" : " request=" + requestId));
+        UiCallHelper.startCall(activity, wxid, video, requestId);
     }
 
     private void log(String message) {

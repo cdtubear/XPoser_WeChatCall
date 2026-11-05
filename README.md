@@ -3,6 +3,7 @@
 [![Android](https://img.shields.io/badge/Android-11+-blue)](https://www.android.com)
 [![LSPosed](https://img.shields.io/badge/LSPosed-supported-green)](https://modules.lsposed.org)
 [![XposedModule](https://img.shields.io/badge/XposedModule-repo-green)](https://github.com/Xposed-Modules-Repo)
+[![Build APK](https://github.com/cdtubear/XPoser_WeChatCall/actions/workflows/build-apk.yml/badge.svg)](https://github.com/cdtubear/XPoser_WeChatCall/actions/workflows/build-apk.yml)
 
 通过 Xposed 模块，在桌面为好友创建独立图标，点击图标一步直达微信视频/语音通话
 
@@ -34,6 +35,8 @@ Hook 边界选择稳定且可被外部拉起的 `com.tencent.mm.ui.LauncherUI`�
 - 为每个好友一键创建桌面图标，图标默认使用微信好友头像，也可在编辑弹窗中自选图片
 - 点击桌面图标即对好友发起视频通话或语音通话
 - **支持桌面控件（1×1 / 2×2 / 4×4），绑定好友后点击直接通话**
+- **支持外部触发：模块内置 HTTP 服务，webhook 可按昵称或 wxid 发起通话并查询结果**
+- **支持 root 锁屏唤醒 + 自动解锁（仅滑动锁）**
 - 支持快捷方式固定（`ShortcutManager`）与旧版广播两种创建方式
 - 支持写入运行日志，便于排查
 
@@ -80,6 +83,104 @@ Hook 边界选择稳定且可被外部拉起的 `com.tencent.mm.ui.LauncherUI`�
 - 使用微信数据库导出/查看类工具（如 WeChatMsg 等）从聊天记录中获取
 - 若好友已设置微信号，部分工具会同时显示其 wxid
 
+## 外部触发（Webhook / HTTP）
+
+主界面右上角 **⚙ → 外部触发** 打开设置页。服务默认关闭，开启后常驻一个前台通知。
+
+前提条件：
+
+- 手机已 root（root 用于后台拉起微信、唤醒屏幕和解锁）
+- 微信已登录，且至少成功导入过一次好友
+- 锁屏自动解锁目前只支持**滑动锁**；设置了密码 / PIN / 图案锁会返回 `DEVICE_LOCKED`
+- 监听地址默认 `0.0.0.0:8790`，建议改为 Tailscale / WireGuard 地址，避免暴露在公共网络
+
+### 鉴权
+
+所有接口都必须携带设置页中的 Token：
+
+```http
+Authorization: Bearer <TOKEN>
+```
+
+也接受 `X-Xp-Token: <TOKEN>`。Token 可在设置页复制或重置；重置后旧调用方立即失效。
+
+### 接口
+
+| 方法 | 路径 | 说明 |
+| --- | --- | --- |
+| GET | `/v1/health` | 服务、root、好友数量、微信安装状态、最近 Hook 回传时间 |
+| POST | `/v1/resolve` | 按昵称 / 备注查 wxid |
+| POST | `/v1/call` | 发起视频或语音通话，立即返回 `202` |
+| GET | `/v1/result/{request_id}` | 查询请求状态（回调之外的轮询方式） |
+
+`/v1/resolve` 请求示例：
+
+```bash
+curl -X POST http://手机IP:8790/v1/resolve \
+  -H "Authorization: Bearer <TOKEN>" \
+  -H "Content-Type: application/json" \
+  -d '{"name":"张三","fuzzy":true,"limit":20}'
+```
+
+`/v1/call` 请求示例：
+
+```bash
+curl -X POST http://手机IP:8790/v1/call \
+  -H "Authorization: Bearer <TOKEN>" \
+  -H "Content-Type: application/json" \
+  -d '{"name":"张三","type":"video"}'
+```
+
+`/v1/call` 支持字段：
+
+| 字段 | 说明 |
+| --- | --- |
+| `wxid` / `name` | 二选一；同时提供时以 `wxid` 为准 |
+| `type` | `video`（默认）或 `voice` |
+| `request_id` | 可选，调用方自定义，便于幂等与查询；允许 `A-Z a-z 0-9 _ . : -`，最长 64 字符 |
+| `callback_url` | 可选，结果回调地址，域名必须在设置页白名单中 |
+| `timeout_sec` | 可选，5–120 秒，默认取设置页配置 |
+| `pick_first` | 最高匹配分对应多个好友时，是否直接取第一个；默认 `false` 并返回 `FRIEND_AMBIGUOUS` |
+
+最高匹配分对应多个好友时，响应会带上候选列表，调用方可改用 `wxid` 精确发起；如果只有一个精确匹配，即使存在其他模糊匹配也会自动选中。
+
+### 状态
+
+```text
+ACCEPTED -> LAUNCHED -> CHAT_OPENED -> PANEL_OPENED -> CALL_MENU_OPENED -> SUCCESS
+                                  \-> FAILED（带 error）
+```
+
+`SUCCESS` 只表示本机已点击到通话界面，**不代表对方接听**。
+
+常见错误码：`UNAUTHORIZED`、`DISABLED`、`RATE_LIMITED`、`BUSY`、`FRIEND_NOT_FOUND`、`FRIEND_AMBIGUOUS`、`NOT_SYNCED`、`ROOT_DENIED`、`DEVICE_LOCKED`、`LAUNCH_BLOCKED`、`TIMEOUT`。
+
+### 结果回调
+
+在设置页填写允许回调的域名后，把 `callback_url` 传给 `/v1/call`。终态时模块会向该地址 POST 请求记录 JSON，并带上：
+
+```http
+X-Xp-Request-Id: <request_id>
+X-Xp-Signature: sha256=<HMAC-SHA256(请求体, TOKEN)>
+```
+
+失败会自动重试 3 次；也可以随时轮询 `/v1/result/{request_id}`。
+
+### ContentProvider（Tasker / 其它 App）
+
+Token 鉴权同样适用，可选配置调用方包名白名单：
+
+```java
+Bundle extras = new Bundle();
+extras.putString("auth", "<TOKEN>");
+Bundle result = getContentResolver().call(
+    Uri.parse("content://com.zgcwkj.xpwechatcall.trigger"),
+    "start_call", "{\"name\":\"张三\",\"type\":\"video\"}", extras);
+String json = result.getString("result");
+```
+
+方法名：`resolve_friend`、`start_call`、`query_result`、`health`。桌面快捷方式不受该接口影响，也不需要 Token。
+
 ## 项目结构
 
 ```text
@@ -90,15 +191,26 @@ app/src/main/java/com/zgcwkj/
     Friend.java           好友数据模型
     FriendSync.java       好友数据回传通道常量与落盘
     ShortcutHelp.java     桌面快捷方式创建与图标生成
+    TriggerContract.java  外部触发契约：方法名、状态、错误码、Token、配置
+    FriendIndex.java      本地好友索引：按昵称 / 备注查 wxid
+    CallReporter.java     微信进程向模块回传通话步骤结果
   xpwechatcall/
     XposedEntry.java      Xposed 入口
     MainActivity.java     好友列表管理界面
     FriendAdapter.java    好友列表适配器
     FriendProvider.java   好友数据接收 Provider
     ShortcutActivity.java 快捷方式入口，向微信转发通话请求
+    TriggerSettingsActivity.java 外部触发设置页
     hook/
       WeChatHook.java     拦截微信主界面，触发通话
       ContactHook.java    捕获 WCDB 主库连接，读取微信好友列表
+    trigger/
+      TriggerApi.java     外部触发核心：解析好友、发起、查询、回调
+      TriggerProvider.java 外部触发 ContentProvider
+      TriggerService.java 外部触发 HTTP 前台服务
+      TriggerStore.java   请求状态持久化、幂等、超时
+      RootShell.java      root 拉起微信、唤醒解锁
+      BootReceiver.java   开机恢复外部触发服务
     voip/
       UiCallHelper.java   打开聊天页并模拟点击发起通话
     widget/
@@ -123,6 +235,20 @@ app/src/main/res/
 | `ContactHook` | 捕获 WCDB 主库连接，从 `rcontact` 表读取并过滤好友列表 |
 | `UiCallHelper` | 打开好友聊天页，按界面文案模拟点击「+」与通话按钮 |
 | `CallWidgetProvider` | 桌面控件，显示好友头像与名字，点击直接发起通话 |
+| `TriggerService` | 外部触发 HTTP 服务，Token 鉴权、限流、超时扫描 |
+| `TriggerApi` | 外部触发核心逻辑，HTTP 与 Provider 共用 |
+| `TriggerStore` | 请求状态持久化、幂等、忙状态、结果回调领取 |
+| `RootShell` | root 命令封装：唤醒解锁、后台拉起微信 |
+
+## 外部触发注意事项
+
+- 服务默认关闭；开启后有一个常驻前台通知，属于正常行为
+- 后台拉起微信和锁屏解锁依赖 root，未授权时返回 `ROOT_DENIED`
+- 自动解锁只处理滑动锁；有密码 / PIN / 图案锁时返回 `DEVICE_LOCKED`
+- 触发时手机会亮屏并切到微信前台，通话界面会遮挡当前 App
+- 按昵称匹配基于本地已导入的好友数据，好友变动后需重新导入
+- 微信界面文案或「+」按钮描述变化时，模拟点击可能失败并返回 `CALL_BUTTON_NOT_FOUND`
+- `SUCCESS` 仅代表本机已发起通话，不保证对方接听
 
 ## 兼容性说明
 
@@ -153,7 +279,79 @@ gradlew assembleDebug
 app/build/outputs/apk/debug/app-debug.apk
 ```
 
-安装后在 Xposed/LSPosed 中启用模块，作用域勾选 `com.tencent.mm`，并重启微信
+安装后在 Xposed/LSPosed 中启用模块，作用域勾选 `com.tencent.mm`，并重启微信。
+
+### 签名 release APK
+
+release 签名通过以下环境变量注入（任一项缺失或 keystore 文件不存在时，只产出 `app-release-unsigned.apk`）：
+
+| 变量 | 说明 |
+| --- | --- |
+| `XP_KEYSTORE_FILE` | keystore 文件路径（绝对路径或相对 `src/app`） |
+| `XP_KEYSTORE_PASSWORD` | keystore 密码 |
+| `XP_KEY_ALIAS` | 密钥别名 |
+| `XP_KEY_PASSWORD` | 密钥密码 |
+
+PowerShell 示例：
+
+```powershell
+$env:XP_KEYSTORE_FILE = "D:\keys\release.jks"
+$env:XP_KEYSTORE_PASSWORD = "******"
+$env:XP_KEY_ALIAS = "release"
+$env:XP_KEY_PASSWORD = "******"
+cd src
+.\gradlew assembleRelease
+```
+
+签名后的 APK 位于 `app/build/outputs/apk/release/app-release.apk`。
+
+### GitHub Actions
+
+仓库已配置 `.github/workflows/build-apk.yml`：
+
+- push 到 `main` 或提交 PR：构建 debug APK，在运行页面的 **Artifacts** 中下载 `XpWeChatCall-debug-<sha>`
+- push `v*` tag：构建已签名的 release APK，并自动创建 GitHub Release 附上 `XpWeChatCall-<tag>.apk`
+- 手动触发：同时构建 debug 与已签名的 release APK，release APK 在 **Artifacts** 中下载
+
+### 配置 release 签名 Secret
+
+在仓库 **Settings → Secrets and variables → Actions** 中新增以下 4 个 Secret（名称固定）：
+
+| Secret | 说明 |
+| --- | --- |
+| `RELEASE_KEYSTORE_BASE64` | keystore 文件的 Base64 文本 |
+| `RELEASE_STORE_PASSWORD` | keystore 密码 |
+| `RELEASE_KEY_ALIAS` | 密钥别名 |
+| `RELEASE_KEY_PASSWORD` | 密钥密码 |
+
+生成 keystore 并转换为 Base64：
+
+```bash
+keytool -genkeypair -v -keystore release.jks -alias release \
+  -keyalg RSA -keysize 2048 -validity 10000
+
+# Linux（无换行）
+base64 -w 0 release.jks > release.jks.base64
+
+# macOS（默认不换行）
+base64 -i release.jks -o release.jks.base64
+
+# Windows PowerShell（无换行）
+[Convert]::ToBase64String([IO.File]::ReadAllBytes("release.jks")) | Set-Content -NoNewline release.jks.base64
+```
+
+把 `release.jks.base64` 的内容整体粘贴到 `RELEASE_KEYSTORE_BASE64`。**不要**把 keystore 或 Base64 文本提交到仓库。
+
+发布流程：
+
+```bash
+git tag v1.0.0
+git push origin v1.0.0
+```
+
+流水线会校验 4 个 Secret 是否齐全；缺失时 release job 直接失败，不会产出 unsigned 包。构建完成后使用 `apksigner verify --print-certs` 校验签名，并上传 `XpWeChatCall-<tag>.apk`。
+
+流水线使用 JDK 17、Android SDK 36 与 Gradle 9.6.1，无需在仓库中提交 `local.properties`。
 
 ## 许可证
 
