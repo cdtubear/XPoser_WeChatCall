@@ -166,6 +166,22 @@ X-Xp-Signature: sha256=<HMAC-SHA256(请求体, TOKEN)>
 
 失败会自动重试 3 次；也可以随时轮询 `/v1/result/{request_id}`。
 
+### OpenAPI / 接口调试
+
+完整接口定义见 [`docs/openapi.yaml`](docs/openapi.yaml)（OpenAPI 3.0.3），包含鉴权方式、请求/响应结构、错误码、状态机、回调签名和示例。
+
+可直接导入 Apifox / Postman / Swagger UI：
+
+- Apifox：项目设置 → 导入数据 → OpenAPI/Swagger → 选择 `docs/openapi.yaml`
+- Postman：Import → 选择 `docs/openapi.yaml`
+- 本地预览：
+
+```bash
+npx @redocly/cli preview-docs docs/openapi.yaml
+```
+
+导入后把 Server 变量 `host`、`port` 改成手机实际地址，并在环境变量或 Auth 中填入设置页的 Token（`Authorization: Bearer <TOKEN>` 或 `X-Xp-Token`）。
+
 ### ContentProvider（Tasker / 其它 App）
 
 Token 鉴权同样适用，可选配置调用方包名白名单：

@@ -1,0 +1,755 @@
+openapi: 3.0.3
+
+info:
+  title: XpWeChatCall 外部触发 API
+  version: 1.0.0
+  description: |
+    XpWeChatCall 模块内置 HTTP 服务，用于从外部 webhook / 脚本触发微信视频或语音通话。
+
+    ## 使用前提
+
+    - 手机已 root，微信已登录，且至少成功导入过一次好友
+    - 模块设置页中已开启「外部触发」，并记下 Token
+    - 服务默认监听 `0.0.0.0:8790`，建议只通过 Tailscale / WireGuard 等内网访问
+
+    ## 鉴权
+
+    所有接口（包括 `/`）都需要携带 Token，二选一：
+
+    ```http
+    Authorization: Bearer <TOKEN>
+    ```
+
+    ```http
+    X-Xp-Token: <TOKEN>
+    ```
+
+    ## 返回约定
+
+    - 鉴权失败返回 `401`，触发限流返回 `429`，未知路径返回 `404`
+    - 业务错误一律返回 HTTP `200`，通过响应体中的 `ok: false` 和 `error` 判断
+    - `/v1/call` 请求被接受时返回 `202 Accepted`
+    - 请求体上限 64 KB，超过时返回 `413`
+    - `SUCCESS` 只表示本机已点击到通话界面，**不代表对方接听**
+  license:
+    name: Apache-2.0
+    url: https://www.apache.org/licenses/LICENSE-2.0
+
+servers:
+  - url: http://{host}:{port}
+    description: 手机在局域网 / Tailscale 中的地址
+    variables:
+      host:
+        default: 192.168.1.100
+        description: 手机 IP 或 Tailscale 域名
+      port:
+        default: '8790'
+        description: 设置页中配置的监听端口
+
+tags:
+  - name: Health
+    description: 服务状态
+  - name: Friend
+    description: 好友查询
+  - name: Call
+    description: 通话触发与结果
+  - name: System
+    description: 帮助信息
+
+security:
+  - bearerAuth: []
+  - tokenHeader: []
+
+paths:
+  /v1/health:
+    get:
+      tags: [ Health ]
+      summary: 健康检查
+      description: 返回服务、root、微信安装状态、好友数量、当前是否有进行中的请求等。
+      operationId: getHealth
+      responses:
+        '200':
+          description: 服务状态
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/HealthResponse'
+                  - $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                healthy:
+                  value:
+                    ok: true
+                    module_version: '1.0'
+                    enabled: true
+                    service_running: true
+                    bind: 0.0.0.0
+                    port: 8790
+                    token_set: true
+                    root: granted
+                    wechat_installed: true
+                    friends_count: 128
+                    friends_synced_at: 1762300000000
+                    last_hook_report: 1762300005000
+                    auto_unlock: true
+                    timeout_sec: 30
+                    busy: false
+                    current_request_id: ''
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+
+  /v1/resolve:
+    post:
+      tags: [ Friend ]
+      summary: 按昵称 / 备注查 wxid
+      description: |
+        基于本地已同步的好友数据查询，不实时读取微信数据库。
+
+        匹配优先级：备注精确 `100` > 昵称精确 `90` > 展示名精确 `80` > 前缀匹配 `60` > 包含匹配 `40`。
+        全角字符、零宽字符和大小写会被归一化。
+      operationId: resolveFriend
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ResolveRequest'
+            examples:
+              byName:
+                value:
+                  name: 张三
+                  fuzzy: true
+                  limit: 20
+      responses:
+        '200':
+          description: 查询结果；业务错误时 `ok=false`
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/ResolveResponse'
+                  - $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                found:
+                  value:
+                    ok: true
+                    data:
+                      count: 1
+                      stale: false
+                      synced_at: 1762300000000
+                      candidates:
+                        - wxid: wxid_abc123
+                          display: 张三
+                          remark: 客户张三
+                          nickname: 三三
+                          match: remark_exact
+                          score: 100
+                notSynced:
+                  value:
+                    ok: false
+                    error: NOT_SYNCED
+                    message: friends not synced, import friends in the app first
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+
+  /v1/call:
+    post:
+      tags: [ Call ]
+      summary: 发起视频 / 语音通话
+      description: |
+        通过 `wxid` 或 `name` 指定好友，服务会异步拉起微信并模拟点击通话按钮。
+        请求被接受时立即返回 `202`，后续状态通过 `/v1/result/{request_id}` 轮询或 `callback_url` 回调获取。
+
+        - 同一时间只允许一个进行中的请求，否则返回 `BUSY`
+        - 相同 `request_id` 重复提交是幂等的，会返回已有记录并带 `duplicate: true`
+        - `timeout_sec` 会被限制在 5–120 秒
+        - 昵称匹配到多个最高分好友时返回 `FRIEND_AMBIGUOUS`，可指定 `wxid` 或设置 `pick_first=true`
+      operationId: startCall
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CallRequest'
+            examples:
+              byName:
+                value:
+                  name: 张三
+                  type: video
+              byWxidWithCallback:
+                value:
+                  wxid: wxid_abc123
+                  type: voice
+                  request_id: order_20261105_001
+                  callback_url: https://example.com/hooks/wechat-call
+                  timeout_sec: 30
+      responses:
+        '202':
+          description: 请求已接受，开始异步拉起微信
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CallAcceptedResponse'
+              examples:
+                accepted:
+                  value:
+                    ok: true
+                    request_id: xp_1762300000000_1a2b3c
+                    state: ACCEPTED
+                    wxid: wxid_abc123
+                    type: video
+        '200':
+          description: 重复请求或业务错误
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/CallDuplicateResponse'
+                  - $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                duplicate:
+                  value:
+                    ok: true
+                    request_id: order_20261105_001
+                    state: SUCCESS
+                    duplicate: true
+                    wxid: wxid_abc123
+                    type: voice
+                busy:
+                  value:
+                    ok: false
+                    error: BUSY
+                    message: another call is in progress
+                    current_request_id: xp_1762300000000_1a2b3c
+                ambiguous:
+                  value:
+                    ok: false
+                    error: FRIEND_AMBIGUOUS
+                    message: multiple friends matched, specify wxid
+                    data:
+                      candidates:
+                        - wxid: wxid_abc123
+                          display: 张三
+                          remark: 客户张三
+                          nickname: 三三
+                          match: remark_exact
+                          score: 100
+                        - wxid: wxid_def456
+                          display: 张三
+                          remark: ''
+                          nickname: 张三
+                          match: nickname_exact
+                          score: 100
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+      callbacks:
+        callResult:
+          '{$request.body#/callback_url}':
+            post:
+              summary: 通话终态回调
+              description: |
+                仅当请求中提供 `callback_url` 且其域名在设置页白名单中时发送。
+                终态（`SUCCESS` / `FAILED`）触发一次，失败自动重试 3 次。
+
+                签名算法：`sha256=` + `HMAC-SHA256(原始请求体, TOKEN)` 的小写十六进制。
+              operationId: onCallResult
+              parameters:
+                - name: X-Xp-Request-Id
+                  in: header
+                  required: true
+                  schema:
+                    type: string
+                - name: X-Xp-Signature
+                  in: header
+                  required: true
+                  description: '`sha256=<hex>`'
+                  schema:
+                    type: string
+                    example: sha256=9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08
+              requestBody:
+                required: true
+                content:
+                  application/json:
+                    schema:
+                      $ref: '#/components/schemas/ResultRecord'
+              responses:
+                '2XX':
+                  description: 回调接收成功；非 2xx 会触发重试
+                '4XX':
+                  description: 回调被拒绝，模块会重试最多 3 次
+
+  /v1/result/{request_id}:
+    get:
+      tags: [ Call ]
+      summary: 查询通话结果
+      description: |
+        轮询接口。记录保留约 30 分钟，最多 200 条；超时请求会自动转为
+        `FAILED` + `TIMEOUT`。结果不存在或已过期时返回 `NOT_FOUND`。
+      operationId: getCallResult
+      parameters:
+        - name: request_id
+          in: path
+          required: true
+          description: '`/v1/call` 返回的请求 ID，或调用方自定义的 ID'
+          schema:
+            type: string
+            pattern: '^[A-Za-z0-9_.:-]{1,64}$'
+          example: order_20261105_001
+      responses:
+        '200':
+          description: 查询结果；业务错误时 `ok=false`
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/ResultResponse'
+                  - $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                success:
+                  value:
+                    ok: true
+                    data:
+                      request_id: order_20261105_001
+                      state: SUCCESS
+                      wxid: wxid_abc123
+                      type: video
+                      created: 1762300000000
+                      updated: 1762300008000
+                      timeout_sec: 30
+                      notified: true
+                      callback: https://example.com/hooks/wechat-call
+                      steps:
+                        - ACCEPTED
+                        - LAUNCHED
+                        - CHAT_OPENED
+                        - PANEL_OPENED
+                        - CALL_MENU_OPENED
+                        - SUCCESS
+                failed:
+                  value:
+                    ok: true
+                    data:
+                      request_id: order_20261105_002
+                      state: FAILED
+                      wxid: wxid_abc123
+                      type: voice
+                      created: 1762300000000
+                      updated: 1762300030000
+                      timeout_sec: 30
+                      notified: false
+                      callback: ''
+                      error: TIMEOUT
+                      detail: no result before timeout
+                      steps:
+                        - ACCEPTED
+                        - FAILED
+                notFound:
+                  value:
+                    ok: false
+                    error: NOT_FOUND
+                    message: request not found or expired
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+
+  /:
+    get:
+      tags: [ System ]
+      summary: 接口帮助
+      description: 返回可用接口列表和鉴权方式，`/v1` 行为相同。
+      operationId: getHelp
+      responses:
+        '200':
+          description: 帮助信息
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HelpResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      description: '`Authorization: Bearer <TOKEN>`'
+    tokenHeader:
+      type: apiKey
+      in: header
+      name: X-Xp-Token
+      description: 与 Bearer Token 二选一
+
+  responses:
+    Unauthorized:
+      description: Token 缺失或错误
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            ok: false
+            error: UNAUTHORIZED
+            message: invalid token
+    RateLimited:
+      description: 同一来源 IP 每分钟请求数超过设置页限制（默认 10 次/分钟）
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            ok: false
+            error: RATE_LIMITED
+            message: too many requests
+
+  schemas:
+    ResolveRequest:
+      type: object
+      required: [ name ]
+      properties:
+        name:
+          type: string
+          description: 昵称 / 备注 / 展示名，全角字符和大小写会被归一化
+          minLength: 1
+          example: 张三
+        fuzzy:
+          type: boolean
+          default: true
+          description: 是否启用前缀 / 包含等模糊匹配
+        limit:
+          type: integer
+          default: 20
+          minimum: 1
+          maximum: 50
+          description: 返回候选数量上限，超过 50 按 50 处理
+
+    CallRequest:
+      type: object
+      description: '`wxid` 与 `name` 至少提供一个；同时提供时以 `wxid` 为准。'
+      properties:
+        wxid:
+          type: string
+          pattern: '^[A-Za-z0-9_.@-]{1,128}$'
+          description: 好友 wxid，可从 `/v1/resolve` 获取
+          example: wxid_abc123
+        name:
+          type: string
+          description: 昵称 / 备注，由模块在本地好友索引中解析
+          example: 张三
+        type:
+          type: string
+          default: video
+          description: 通话类型，也接受中文值
+          enum: [ video, voice, 视频, 语音, 视频通话, 语音通话 ]
+          example: video
+        request_id:
+          type: string
+          pattern: '^[A-Za-z0-9_.:-]{1,64}$'
+          description: 可选，自定义请求 ID，用于幂等与查询；不传则自动生成
+          example: order_20261105_001
+        callback_url:
+          type: string
+          format: uri
+          maxLength: 512
+          description: 可选，终态回调地址，域名必须在设置页白名单中
+          example: https://example.com/hooks/wechat-call
+        timeout_sec:
+          type: integer
+          default: 30
+          minimum: 5
+          maximum: 120
+          description: 等待 Hook 回报的超时时间，超出范围会被截断
+        pick_first:
+          type: boolean
+          default: false
+          description: 最高匹配分有多个好友时是否直接选第一个；默认返回 `FRIEND_AMBIGUOUS`
+
+    Candidate:
+      type: object
+      properties:
+        wxid:
+          type: string
+        display:
+          type: string
+          description: 展示名，优先备注
+        remark:
+          type: string
+        nickname:
+          type: string
+        match:
+          type: string
+          enum: [ remark_exact, nickname_exact, name_exact, startsWith, contains ]
+          description: 匹配方式
+        score:
+          type: integer
+          description: '匹配分：备注 100 / 昵称 90 / 展示名 80 / 前缀 60 / 包含 40'
+
+    FriendList:
+      type: object
+      properties:
+        count:
+          type: integer
+          description: 匹配到的好友总数（不一定等于 `candidates` 长度）
+        stale:
+          type: boolean
+          description: 好友数据是否超过 7 天未更新
+        synced_at:
+          type: integer
+          format: int64
+          description: 最近一次同步时间，Unix 毫秒时间戳
+        candidates:
+          type: array
+          items:
+            $ref: '#/components/schemas/Candidate'
+
+    ResolveResponse:
+      type: object
+      required: [ ok, data ]
+      properties:
+        ok:
+          type: boolean
+          enum: [ true ]
+        data:
+          $ref: '#/components/schemas/FriendList'
+
+    CallAcceptedResponse:
+      type: object
+      required: [ ok, request_id, state, wxid, type ]
+      properties:
+        ok:
+          type: boolean
+          enum: [ true ]
+        request_id:
+          type: string
+        state:
+          type: string
+          enum: [ ACCEPTED ]
+        wxid:
+          type: string
+        type:
+          type: string
+          enum: [ video, voice ]
+        matched:
+          type: array
+          description: 通过 `name` 触发时返回的候选列表
+          items:
+            $ref: '#/components/schemas/Candidate'
+
+    CallDuplicateResponse:
+      type: object
+      required: [ ok, request_id, state, duplicate ]
+      properties:
+        ok:
+          type: boolean
+          enum: [ true ]
+        request_id:
+          type: string
+        state:
+          $ref: '#/components/schemas/RequestState'
+        duplicate:
+          type: boolean
+          enum: [ true ]
+        wxid:
+          type: string
+        type:
+          type: string
+          enum: [ video, voice ]
+
+    ResultResponse:
+      type: object
+      required: [ ok, data ]
+      properties:
+        ok:
+          type: boolean
+          enum: [ true ]
+        data:
+          $ref: '#/components/schemas/ResultRecord'
+
+    ResultRecord:
+      type: object
+      required: [ request_id, state, wxid, type, created, updated, timeout_sec, steps ]
+      properties:
+        request_id:
+          type: string
+        state:
+          $ref: '#/components/schemas/RequestState'
+        wxid:
+          type: string
+        type:
+          type: string
+          enum: [ video, voice ]
+        created:
+          type: integer
+          format: int64
+          description: 创建时间，Unix 毫秒时间戳
+        updated:
+          type: integer
+          format: int64
+          description: 最近更新时间，Unix 毫秒时间戳
+        timeout_sec:
+          type: integer
+        notified:
+          type: boolean
+          description: 回调是否已经尝试发送
+        callback:
+          type: string
+          description: 回调地址，未配置时为空字符串
+        steps:
+          type: array
+          description: 状态推进记录
+          items:
+            $ref: '#/components/schemas/RequestState'
+        error:
+          type: string
+          description: 失败时的错误码，仅 `FAILED` 状态存在
+          enum:
+            - UNAUTHORIZED
+            - DISABLED
+            - RATE_LIMITED
+            - BAD_REQUEST
+            - BUSY
+            - NOT_FOUND
+            - RESULT_EXPIRED
+            - FRIEND_NOT_FOUND
+            - FRIEND_AMBIGUOUS
+            - NOT_SYNCED
+            - WECHAT_NOT_INSTALLED
+            - MODULE_INACTIVE
+            - ROOT_DENIED
+            - LAUNCH_BLOCKED
+            - DEVICE_LOCKED
+            - CHAT_OPEN_FAILED
+            - CALL_BUTTON_NOT_FOUND
+            - TIMEOUT
+            - INTERNAL
+        detail:
+          type: string
+          description: 失败细节，最多 300 字符
+
+    RequestState:
+      type: string
+      description: |
+        状态机：
+
+        `ACCEPTED -> LAUNCHED -> CHAT_OPENED -> PANEL_OPENED -> CALL_MENU_OPENED -> SUCCESS`
+
+        任一步失败进入 `FAILED`。
+      enum:
+        - ACCEPTED
+        - LAUNCHED
+        - CHAT_OPENED
+        - PANEL_OPENED
+        - CALL_MENU_OPENED
+        - SUCCESS
+        - FAILED
+
+    HealthResponse:
+      type: object
+      required: [ ok ]
+      properties:
+        ok:
+          type: boolean
+          enum: [ true ]
+        module_version:
+          type: string
+        enabled:
+          type: boolean
+          description: 设置页中是否已启用外部触发
+        service_running:
+          type: boolean
+        bind:
+          type: string
+        port:
+          type: integer
+        token_set:
+          type: boolean
+        root:
+          type: string
+          enum: [ granted, denied, unknown ]
+        wechat_installed:
+          type: boolean
+        friends_count:
+          type: integer
+        friends_synced_at:
+          type: integer
+          format: int64
+        last_hook_report:
+          type: integer
+          format: int64
+          description: 最近一次收到微信进程 Hook 回报的时间，0 表示从未收到
+        auto_unlock:
+          type: boolean
+        timeout_sec:
+          type: integer
+        busy:
+          type: boolean
+        current_request_id:
+          type: string
+          description: 有进行中的请求时为其 ID，否则为空字符串
+
+    HelpResponse:
+      type: object
+      properties:
+        ok:
+          type: boolean
+        service:
+          type: string
+        endpoints:
+          type: array
+          items:
+            type: string
+        auth:
+          type: string
+
+    ErrorResponse:
+      type: object
+      required: [ ok, error, message ]
+      properties:
+        ok:
+          type: boolean
+          enum: [ false ]
+        error:
+          type: string
+          description: 错误码
+          enum:
+            - UNAUTHORIZED
+            - DISABLED
+            - RATE_LIMITED
+            - BAD_REQUEST
+            - BUSY
+            - NOT_FOUND
+            - RESULT_EXPIRED
+            - FRIEND_NOT_FOUND
+            - FRIEND_AMBIGUOUS
+            - NOT_SYNCED
+            - WECHAT_NOT_INSTALLED
+            - MODULE_INACTIVE
+            - ROOT_DENIED
+            - LAUNCH_BLOCKED
+            - DEVICE_LOCKED
+            - CHAT_OPEN_FAILED
+            - CALL_BUTTON_NOT_FOUND
+            - TIMEOUT
+            - INTERNAL
+        message:
+          type: string
+        data:
+          type: object
+          description: 仅 `FRIEND_AMBIGUOUS` 时返回候选列表
+          properties:
+            candidates:
+              type: array
+              items:
+                $ref: '#/components/schemas/Candidate'
+        current_request_id:
+          type: string
+          description: 仅 `BUSY` 时返回当前进行中的请求 ID
