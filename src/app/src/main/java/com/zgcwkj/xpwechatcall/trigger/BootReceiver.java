@@ -8,15 +8,26 @@ import com.zgcwkj.comm.LogHelp;
 import com.zgcwkj.comm.TriggerContract;
 
 /**
- * 开机后恢复外部触发服务
+ * 开机、升级或 root 看门狗唤醒后恢复外部触发服务
  *
  * 只在用户已经开启外部触发时启动，避免无谓的常驻通知。
+ * 看门狗通过显式广播调用这里，而不是直接 start-foreground-service：
+ * TriggerService 保持 exported=false，外部 App 无法直接启动或停止它。
  */
 public class BootReceiver extends BroadcastReceiver {
 
+    /** root 看门狗使用的唤醒 action */
+    public static final String ACTION_WATCHDOG = "com.zgcwkj.xpwechatcall.action.WATCHDOG_START";
+
     @Override
     public void onReceive(Context context, Intent intent) {
-        if (intent == null || !Intent.ACTION_BOOT_COMPLETED.equals(intent.getAction())) {
+        if (intent == null) {
+            return;
+        }
+        var action = intent.getAction();
+        if (!Intent.ACTION_BOOT_COMPLETED.equals(action)
+            && !Intent.ACTION_MY_PACKAGE_REPLACED.equals(action)
+            && !ACTION_WATCHDOG.equals(action)) {
             return;
         }
         if (!TriggerContract.isEnabled(context)) {
@@ -24,7 +35,7 @@ public class BootReceiver extends BroadcastReceiver {
         }
         try {
             TriggerService.start(context);
-            LogHelp.i("XpWeChatCall", "trigger service restored after boot");
+            LogHelp.i("XpWeChatCall", "trigger service restored: " + action);
         } catch (Throwable e) {
             LogHelp.e("XpWeChatCall", "restore trigger service failed: " + e.getMessage(), e);
         }

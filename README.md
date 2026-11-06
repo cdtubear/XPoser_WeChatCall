@@ -36,6 +36,7 @@ Hook 边界选择稳定且可被外部拉起的 `com.tencent.mm.ui.LauncherUI`�
 - 点击桌面图标即对好友发起视频通话或语音通话
 - **支持桌面控件（1×1 / 2×2 / 4×4），绑定好友后点击直接通话**
 - **支持外部触发：模块内置 HTTP 服务，webhook 可按昵称或 wxid 发起通话并查询结果**
+- **支持 root 看门狗保活：App 进程被杀后自动恢复 webhook 服务**
 - **支持 root 锁屏唤醒 + 自动解锁（仅滑动锁）**
 - 支持快捷方式固定（`ShortcutManager`）与旧版广播两种创建方式
 - 支持写入运行日志，便于排查
@@ -225,8 +226,10 @@ app/src/main/java/com/zgcwkj/
       TriggerProvider.java 外部触发 ContentProvider
       TriggerService.java 外部触发 HTTP 前台服务
       TriggerStore.java   请求状态持久化、幂等、超时
-      RootShell.java      root 拉起微信、唤醒解锁
-      BootReceiver.java   开机恢复外部触发服务
+      RootShell.java      root 拉起微信、唤醒解锁、执行 root 命令
+      WatchdogHelper.java root 看门狗脚本安装、卸载、状态检测
+      KeepAliveHelper.java 电池白名单、MIUI / HyperOS 自启动入口
+      BootReceiver.java   开机 / 升级后恢复外部触发服务
     voip/
       UiCallHelper.java   打开聊天页并模拟点击发起通话
     widget/
@@ -254,7 +257,10 @@ app/src/main/res/
 | `TriggerService` | 外部触发 HTTP 服务，Token 鉴权、限流、超时扫描 |
 | `TriggerApi` | 外部触发核心逻辑，HTTP 与 Provider 共用 |
 | `TriggerStore` | 请求状态持久化、幂等、忙状态、结果回调领取 |
-| `RootShell` | root 命令封装：唤醒解锁、后台拉起微信 |
+| `RootShell` | root 命令封装：唤醒解锁、后台拉起微信、执行内部 root 命令 |
+| `WatchdogHelper` | 写入 `/data/adb/service.d` 看门狗脚本，每 30 秒检查端口并拉起服务 |
+| `KeepAliveHelper` | 电池优化白名单、MIUI / HyperOS 自启动设置入口 |
+| `BootReceiver` | 开机完成和 App 升级后恢复外部触发服务 |
 
 ## 外部触发注意事项
 
@@ -265,6 +271,106 @@ app/src/main/res/
 - 按昵称匹配基于本地已导入的好友数据，好友变动后需重新导入
 - 微信界面文案或「+」按钮描述变化时，模拟点击可能失败并返回 `CALL_BUTTON_NOT_FOUND`
 - `SUCCESS` 仅代表本机已发起通话，不保证对方接听
+
+## 保活 / 后台运行
+
+外部触发是普通的 Android 前台服务，运行在模块 App 进程里。用户从最近任务划掉 App、系统内存不足回收进程、或 MIUI / HyperOS 的省电策略清理后台时，HTTP 端口都会消失，webhook 随之不可用。
+
+模块从三个层面保活，建议全部开启：
+
+| 层级 | 机制 | 能扛住什么 | 开启方式 |
+| --- | --- | --- | --- |
+| root 看门狗 | `/data/adb/service.d` 下的开机脚本，每 30 秒检查端口，失联就广播唤醒 App 并拉起服务 | 划掉 App、系统回收、OEM 清理、重启手机 | 设置页「启用 root 看门狗」 |
+| 服务生命周期 | `START_STICKY` + `onTaskRemoved` 闹钟 + 开机 / 升级广播 | 系统内存回收、划掉任务、App 升级 | 默认启用 |
+| 系统白名单 | Doze 电池白名单、自启动、省电策略无限制 | Doze 断网、后台被杀 | 设置页「电池白名单」「自启动设置」 |
+
+> 前提：手机已 root，且 root 管理器使用 `/data/adb/service.d`（Magisk、KernelSU、APatch 均支持）。设置页会自动写入脚本，不需要手动改文件。
+
+### 设置页操作
+
+打开 **⚙ → 外部触发**，在「保活 / 自启动」区域：
+
+1. 打开「启用 root 看门狗」，首次会弹出 root 授权，授予后状态显示「运行中」
+2. 点击「电池白名单」：有 root 时静默执行 `cmd deviceidle whitelist +<包名>` 和 `am set-standby-bucket <包名> active`；没有 root 时回退到系统弹窗
+3. 点击「自启动设置」，在系统页面允许本应用自启动
+4. 状态行会显示 `root` / `看门狗` / `电池白名单` 三项当前状态
+
+开关外部触发时，如果已授权 root，会顺带加入电池白名单，并在看门狗开关打开的情况下自动安装看门狗。
+
+### MIUI 13.0.10
+
+按顺序设置：
+
+1. **省电策略**：设置 → 应用设置 → 应用管理 → XpWeChatCall → 省电策略 → **无限制**
+2. **自启动**：设置 → 应用设置 → 应用管理 → XpWeChatCall → 自启动 → 打开
+3. **电池优化**：设置 → 隐私保护 → 特殊权限 → 电池优化 → 右上角切换到「所有应用」→ XpWeChatCall → **不优化**
+   （也可以直接点设置页的「电池白名单」按钮）
+4. **后台弹出界面**：设置 → 应用设置 → 应用管理 → XpWeChatCall → 权限管理 → 后台弹出界面 → 允许
+5. **通知**：设置 → 应用设置 → 应用管理 → XpWeChatCall → 通知管理 → 允许通知（前台服务通知必须可见）
+6. **锁定任务**：打开最近任务，长按 XpWeChatCall 卡片 → 锁定（出现小锁图标），避免「一键清理」时被清掉
+7. **手机管家**：安全中心 → 垃圾清理 / 加速，把 XpWeChatCall 加入清理白名单（如果有该选项）
+
+### HyperOS 1.0.7
+
+HyperOS 把部分入口合并到了「应用管理」和「电池」中：
+
+1. **省电策略**：设置 → 应用设置 → 应用管理 → XpWeChatCall → 省电策略 → **无限制**
+2. **自启动**：设置 → 应用设置 → 应用管理 → XpWeChatCall → 自启动 → 打开
+3. **电池优化**：设置 → 隐私与安全 → 特殊权限 → 电池优化 → 切换到「所有应用」→ XpWeChatCall → **不优化**
+4. **后台弹出界面**：设置 → 应用设置 → 应用管理 → XpWeChatCall → 其他权限 → 后台弹出界面 / 显示在其它应用上层 → 允许
+5. **通知**：设置 → 应用设置 → 应用管理 → XpWeChatCall → 通知管理 → 允许通知；同时确认「常驻通知」没有被关闭
+6. **锁定任务**：最近任务里长按 XpWeChatCall 卡片 → 锁定
+7. **应用耗电管理**：设置 → 电池 → 应用耗电管理 → XpWeChatCall → 允许后台活动
+
+### 验证保活是否生效
+
+先确认服务在跑：
+
+```bash
+curl -H "Authorization: Bearer <TOKEN>" http://手机IP:8790/v1/health
+```
+
+然后依次做这些操作，每次等 30–60 秒再请求一次 `/v1/health`：
+
+1. 按 Home 键让 App 进入后台
+2. 从最近任务划掉 App
+3. 用 `adb shell am kill com.zgcwkj.xpwechatcall` 杀掉进程（模拟低内存回收）
+4. 重启手机
+
+只要看门狗在运行，端口会在一分钟内恢复。注意：在系统设置里点「强行停止」会把整个包标记为 stopped，Linux 层面仍可能被看门狗拉起，但部分 ROM 会阻止，遇到这种情况需要手动再打开一次 App。
+
+### 日志排查
+
+| 内容 | 路径 |
+| --- | --- |
+| 看门狗脚本 | `/data/adb/service.d/xp_wechatcall_watchdog.sh` |
+| 看门狗 PID | `/data/local/tmp/xp_wechatcall_watchdog.pid` |
+| 看门狗重启日志 | `/data/local/tmp/xp_wechatcall_watchdog.log` |
+| 模块日志 | App 私有目录 `logs/`，也可用 `adb logcat -s XpWeChatCall` |
+
+查看看门狗日志：
+
+```bash
+adb shell su -c "cat /data/local/tmp/xp_wechatcall_watchdog.log"
+```
+
+手动确认脚本在运行：
+
+```bash
+adb shell su -c "cat /data/local/tmp/xp_wechatcall_watchdog.pid"
+adb shell su -c "ps -A | grep xp_wechatcall_watchdog"
+```
+
+端口检查依赖 `/proc/net/tcp` 和 `/proc/net/tcp6`，脚本会把端口转成十六进制匹配（8790 → `2256`）。如果系统隐藏了 `/proc/net/tcp`，看门狗会一直认为端口不在并重复拉起服务，此时可先关闭看门狗，改用系统白名单方案。
+
+### 注意事项
+
+- **卸载 App 前先在设置页关闭「root 看门狗」**，否则脚本会留在 `/data/adb/service.d`，开机后不断尝试拉起已卸载的包
+- 关闭通知栏服务（点「停止」）会同时把外部触发开关设为关闭，避免看门狗反复拉起
+- 开启看门狗时会顺带加入电池白名单；Android 12+ 在未加入白名单时会阻止后台启动前台服务
+- 看门狗通过显式广播唤醒 `BootReceiver`，再拉起服务；`TriggerService` 保持 `exported=false`，外部 App 无法直接启动或停止它
+- 看门狗只负责让端口恢复监听，不负责解锁手机；通话仍需要 root 解锁或保持屏幕常亮
+- 如果你使用 LSPosed 的「应用隐藏」或冻结类工具隐藏了模块 App，root 看门狗可能无法启动服务，需要把本应用加入白名单
 
 ## 兼容性说明
 

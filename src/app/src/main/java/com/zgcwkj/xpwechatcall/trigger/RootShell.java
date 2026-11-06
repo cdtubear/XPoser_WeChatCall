@@ -192,6 +192,18 @@ public final class RootShell {
         return new int[]{width, height};
     }
 
+    /**
+     * 以 root 执行命令，供看门狗安装等内部功能使用
+     *
+     * 注意：command 只能由代码拼接固定参数，不要把外部输入直接传进来。
+     */
+    public static Result runAsRoot(String command) {
+        if (command == null || command.trim().isEmpty()) {
+            return new Result(false, "empty command");
+        }
+        return execRoot(command);
+    }
+
     private static Result execRoot(String command) {
         return exec(new String[]{"su", "-c", command});
     }

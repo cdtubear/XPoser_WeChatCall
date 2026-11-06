@@ -20,9 +20,11 @@ import android.widget.Toast;
 import com.zgcwkj.comm.ConfigHelp;
 import com.zgcwkj.comm.LogHelp;
 import com.zgcwkj.comm.TriggerContract;
+import com.zgcwkj.xpwechatcall.trigger.KeepAliveHelper;
 import com.zgcwkj.xpwechatcall.trigger.RootShell;
 import com.zgcwkj.xpwechatcall.trigger.TriggerApi;
 import com.zgcwkj.xpwechatcall.trigger.TriggerService;
+import com.zgcwkj.xpwechatcall.trigger.WatchdogHelper;
 
 import org.json.JSONObject;
 
@@ -39,15 +41,21 @@ public class TriggerSettingsActivity extends Activity {
 
     private Switch swEnable;
     private Switch swUnlock;
+    private Switch swWatchdog;
     private TextView tvStatus;
     private TextView tvToken;
     private TextView tvHint;
+    private TextView tvKeepAlive;
     private EditText etBind;
     private EditText etPort;
     private EditText etRate;
     private EditText etTimeout;
     private EditText etCallback;
     private EditText etPackages;
+
+    /** 程序化更新 Switch 时避免触发保存逻辑 */
+    private boolean syncingUi;
+    private boolean keepAliveBusy;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -64,15 +72,22 @@ public class TriggerSettingsActivity extends Activity {
     @Override
     protected void onResume() {
         super.onResume();
+        // 通知栏「停止」会直接关闭开关，回到页面时同步一次
+        syncingUi = true;
+        swEnable.setChecked(TriggerContract.isEnabled(this));
+        syncingUi = false;
         updateStatus();
+        refreshKeepAliveAsync();
     }
 
     private void bindViews() {
         swEnable = findViewById(R.id.sw_enable);
         swUnlock = findViewById(R.id.sw_unlock);
+        swWatchdog = findViewById(R.id.sw_watchdog);
         tvStatus = findViewById(R.id.tv_status);
         tvToken = findViewById(R.id.tv_token);
         tvHint = findViewById(R.id.tv_hint);
+        tvKeepAlive = findViewById(R.id.tv_keepalive);
         etBind = findViewById(R.id.et_bind);
         etPort = findViewById(R.id.et_port);
         etRate = findViewById(R.id.et_rate);
@@ -121,7 +136,19 @@ public class TriggerSettingsActivity extends Activity {
         findViewById(R.id.btn_save).setOnClickListener(v -> saveAndApply());
         findViewById(R.id.btn_test).setOnClickListener(v -> testStatus());
         findViewById(R.id.btn_root).setOnClickListener(v -> checkRoot());
-        swEnable.setOnCheckedChangeListener((buttonView, isChecked) -> saveAndApply());
+        findViewById(R.id.btn_battery).setOnClickListener(v -> requestBatteryWhitelist());
+        findViewById(R.id.btn_autostart).setOnClickListener(v ->
+            KeepAliveHelper.openAutoStartSettings(this));
+        swEnable.setOnCheckedChangeListener((buttonView, isChecked) -> {
+            if (!syncingUi) {
+                saveAndApply();
+            }
+        });
+        swWatchdog.setOnCheckedChangeListener((buttonView, isChecked) -> {
+            if (!syncingUi) {
+                toggleWatchdog(isChecked);
+            }
+        });
     }
 
     private void copyToken() {
@@ -195,6 +222,7 @@ public class TriggerSettingsActivity extends Activity {
         TriggerService.stop(this);
         if (enabled) {
             requestNotificationPermission();
+            ensureKeepAliveOnEnable();
             new Handler(Looper.getMainLooper()).postDelayed(() -> {
                 try {
                     TriggerService.start(this);
@@ -206,6 +234,117 @@ public class TriggerSettingsActivity extends Activity {
         updateHint();
         new Handler(Looper.getMainLooper()).postDelayed(this::updateStatus, 1200);
         toast("已保存");
+    }
+
+    /**
+     * 开启外部触发时顺带申请保活：root 静默加白名单；看门狗按开关状态安装
+     */
+    private void ensureKeepAliveOnEnable() {
+        final var wantWatchdog = swWatchdog.isChecked();
+        new Thread(() -> {
+            if (RootShell.hasRoot(this)) {
+                KeepAliveHelper.applyBatteryWhitelistWithRoot(this);
+                if (wantWatchdog && !WatchdogHelper.isInstalled(this)) {
+                    WatchdogHelper.install(this);
+                }
+            }
+            runOnUiThread(this::refreshKeepAliveAsync);
+        }, "xp-keepalive-apply").start();
+    }
+
+    private void requestBatteryWhitelist() {
+        if (KeepAliveHelper.isIgnoringBatteryOptimizations(this)) {
+            toast("已在电池优化白名单");
+            return;
+        }
+        setKeepAliveBusy(true);
+        new Thread(() -> {
+            var ok = KeepAliveHelper.applyBatteryWhitelistWithRoot(this);
+            runOnUiThread(() -> {
+                setKeepAliveBusy(false);
+                if (ok) {
+                    toast("已加入电池优化白名单");
+                    refreshKeepAliveAsync();
+                } else {
+                    // 非 root 或命令失败时，回退到系统弹窗
+                    KeepAliveHelper.requestIgnoreBatteryOptimizations(this);
+                }
+            });
+        }, "xp-battery-whitelist").start();
+    }
+
+    private void toggleWatchdog(boolean enable) {
+        setKeepAliveBusy(true);
+        new Thread(() -> {
+            String message;
+            boolean success;
+            if (enable) {
+                if (!WatchdogHelper.isSupported(this)) {
+                    success = false;
+                    message = "需要 root，以及 Magisk / KernelSU / APatch 的 /data/adb";
+                } else {
+                    // 后台启动前台服务需要绕过 Android 12+ 限制，先加入电池白名单
+                    KeepAliveHelper.applyBatteryWhitelistWithRoot(this);
+                    success = WatchdogHelper.install(this);
+                    message = success ? "root 看门狗已安装" : "看门狗安装失败，请检查 root 授权";
+                }
+            } else {
+                success = WatchdogHelper.uninstall(this);
+                message = success ? "root 看门狗已移除" : "看门狗移除失败";
+            }
+            final var ok = success;
+            runOnUiThread(() -> {
+                setKeepAliveBusy(false);
+                toast(message);
+                if (!ok) {
+                    syncingUi = true;
+                    swWatchdog.setChecked(!enable);
+                    syncingUi = false;
+                }
+                refreshKeepAliveAsync();
+            });
+        }, "xp-watchdog-toggle").start();
+    }
+
+    private void setKeepAliveBusy(boolean busy) {
+        keepAliveBusy = busy;
+        swWatchdog.setEnabled(!busy);
+        findViewById(R.id.btn_battery).setEnabled(!busy);
+        findViewById(R.id.btn_autostart).setEnabled(!busy);
+    }
+
+    /**
+     * 后台读取 root / 看门狗 / 电池白名单状态，避免主线程执行 su
+     */
+    private void refreshKeepAliveAsync() {
+        new Thread(() -> {
+            var root = RootShell.hasRoot(this);
+            var supported = root && WatchdogHelper.isSupported(this);
+            var installed = supported && WatchdogHelper.isInstalled(this);
+            var running = installed && WatchdogHelper.isRunning(this);
+            var battery = KeepAliveHelper.isIgnoringBatteryOptimizations(this);
+            runOnUiThread(() -> {
+                syncingUi = true;
+                swWatchdog.setChecked(installed);
+                syncingUi = false;
+                swWatchdog.setEnabled(!keepAliveBusy);
+
+                String watchdog;
+                if (!root) {
+                    watchdog = "需要 root";
+                } else if (!supported) {
+                    watchdog = "不支持 /data/adb";
+                } else if (!installed) {
+                    watchdog = "未安装";
+                } else {
+                    watchdog = running ? "运行中" : "已安装，等待下次检查";
+                }
+                tvKeepAlive.setText("root: " + (root ? "已授权" : "未授权")
+                    + "\n看门狗: " + watchdog
+                    + "\n电池白名单: " + (battery ? "已加入" : "未加入"));
+                updateStatus();
+            });
+        }, "xp-keepalive-status").start();
     }
 
     private void requestNotificationPermission() {

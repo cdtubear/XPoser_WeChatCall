@@ -1,5 +1,6 @@
 package com.zgcwkj.xpwechatcall.trigger;
 
+import android.app.AlarmManager;
 import android.app.Notification;
 import android.app.NotificationChannel;
 import android.app.NotificationManager;
@@ -7,6 +8,7 @@ import android.app.PendingIntent;
 import android.app.Service;
 import android.content.Context;
 import android.content.Intent;
+import android.os.Build;
 import android.os.Handler;
 import android.os.IBinder;
 import android.os.Looper;
@@ -53,6 +55,8 @@ public class TriggerService extends Service {
     private static final String TAG = "XpWeChatCall";
     private static final String CHANNEL = "trigger_service";
     private static final int NOTIFICATION_ID = 0x5850;
+    private static final int RESTART_REQUEST_CODE = 0x5851;
+    private static final long RESTART_DELAY_MS = 3000L;
     private static final int MAX_HEADER = 8192;
     private static final int MAX_BODY = 64 * 1024;
 
@@ -94,9 +98,13 @@ public class TriggerService extends Service {
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
         if (intent != null && ACTION_STOP.equals(intent.getAction())) {
+            // 通知栏「停止」是用户的明确意图：同时关闭开关，避免看门狗又把服务拉起
+            TriggerContract.setEnabled(this, false);
+            cancelRestart(this);
             stopSelf();
             return START_NOT_STICKY;
         }
+        cancelRestart(this);
         if (!TriggerContract.isEnabled(this)) {
             stopSelf();
             return START_NOT_STICKY;
@@ -125,6 +133,61 @@ public class TriggerService extends Service {
         }
         LogHelp.i(TAG, "trigger service stopped");
         super.onDestroy();
+    }
+
+    /**
+     * 用户从最近任务划掉 App 时，用闹钟做一次兜底重启
+     *
+     * 系统内存回收由 START_STICKY 处理；强行停止和 OEM 清理由 root 看门狗处理。
+     */
+    @Override
+    public void onTaskRemoved(Intent rootIntent) {
+        scheduleRestart(this);
+        super.onTaskRemoved(rootIntent);
+    }
+
+    /**
+     * 安排一次服务重启；没有精确闹钟权限时退回非精确闹钟
+     */
+    private static void scheduleRestart(Context context) {
+        if (!TriggerContract.isEnabled(context)) {
+            return;
+        }
+        try {
+            var manager = (AlarmManager) context.getSystemService(Context.ALARM_SERVICE);
+            if (manager == null) {
+                return;
+            }
+            var intent = new Intent(context, TriggerService.class).setAction(ACTION_START);
+            var pending = PendingIntent.getForegroundService(context, RESTART_REQUEST_CODE,
+                intent, PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
+            var at = System.currentTimeMillis() + RESTART_DELAY_MS;
+            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S
+                || manager.canScheduleExactAlarms()) {
+                manager.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, at, pending);
+            } else {
+                manager.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, at, pending);
+            }
+            LogHelp.i(TAG, "trigger service restart scheduled");
+        } catch (Throwable e) {
+            LogHelp.w(TAG, "schedule trigger restart failed: " + e.getMessage());
+        }
+    }
+
+    private static void cancelRestart(Context context) {
+        try {
+            var manager = (AlarmManager) context.getSystemService(Context.ALARM_SERVICE);
+            if (manager == null) {
+                return;
+            }
+            var intent = new Intent(context, TriggerService.class).setAction(ACTION_START);
+            var pending = PendingIntent.getForegroundService(context, RESTART_REQUEST_CODE,
+                intent, PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
+            manager.cancel(pending);
+            pending.cancel();
+        } catch (Throwable ignored) {
+            // 忽略
+        }
     }
 
     @Override
