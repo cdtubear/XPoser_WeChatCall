@@ -401,6 +401,9 @@ public class TriggerSettingsActivity extends Activity {
             + "  -H \"Authorization: Bearer <TOKEN>\" \\\n"
             + "  -H \"Content-Type: application/json\" \\\n"
             + "  -d '{\"name\":\"张三\"}'\n\n"
+            + "好友列表\n"
+            + "curl -H \"Authorization: Bearer <TOKEN>\" \\\n  " + base
+            + "/v1/friends?limit=50\n\n"
             + "发起通话\n"
             + "curl -X POST " + base + "/v1/call \\\n"
             + "  -H \"Authorization: Bearer <TOKEN>\" \\\n"

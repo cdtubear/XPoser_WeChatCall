@@ -22,6 +22,7 @@ public final class TriggerContract {
 
     /** 对外方法名 */
     public static final String METHOD_RESOLVE = "resolve_friend";
+    public static final String METHOD_FRIENDS = "list_friends";
     public static final String METHOD_START = "start_call";
     public static final String METHOD_QUERY = "query_result";
     public static final String METHOD_HEALTH = "health";

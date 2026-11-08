@@ -110,9 +110,49 @@ Authorization: Bearer <TOKEN>
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
 | GET | `/v1/health` | 服务、root、好友数量、微信安装状态、最近 Hook 回传时间 |
+| GET | `/v1/friends` | 获取全部好友列表，支持分页与关键字过滤 |
 | POST | `/v1/resolve` | 按昵称 / 备注查 wxid |
 | POST | `/v1/call` | 发起视频或语音通话，立即返回 `202` |
 | GET | `/v1/result/{request_id}` | 查询请求状态（回调之外的轮询方式） |
+
+`/v1/friends` 请求示例：
+
+```bash
+# 获取全部好友
+curl -H "Authorization: Bearer <TOKEN>" http://手机IP:8790/v1/friends
+
+# 分页 + 关键字过滤
+curl -H "Authorization: Bearer <TOKEN>" \
+  "http://手机IP:8790/v1/friends?offset=0&limit=50&keyword=张三"
+```
+
+`/v1/friends` 查询参数：
+
+| 参数 | 说明 |
+| --- | --- |
+| `offset` | 可选，起始下标，默认 `0` |
+| `limit` | 可选，返回数量；不传或小于等于 `0` 时返回全部 |
+| `keyword` / `q` | 可选，按 wxid、展示名、备注、昵称过滤，忽略大小写与全角半角 |
+
+返回结构：
+
+```json
+{
+  "ok": true,
+  "data": {
+    "total": 128,
+    "count": 50,
+    "offset": 0,
+    "synced_at": 1762300000000,
+    "stale": false,
+    "friends": [
+      { "wxid": "wxid_abc123", "display": "张三", "remark": "客户张三", "nickname": "三三" }
+    ]
+  }
+}
+```
+
+`total` 是去重并应用 `keyword` 后的总数，`count` 是本次返回数量；`stale=true` 表示好友数据超过 7 天未更新，建议在 App 内重新导入。未同步过好友数据时返回 `ok=false`、`error=NOT_SYNCED`。
 
 `/v1/resolve` 请求示例：
 
@@ -196,7 +236,7 @@ Bundle result = getContentResolver().call(
 String json = result.getString("result");
 ```
 
-方法名：`resolve_friend`、`start_call`、`query_result`、`health`。桌面快捷方式不受该接口影响，也不需要 Token。
+方法名：`resolve_friend`、`list_friends`、`start_call`、`query_result`、`health`。`list_friends` 的 `arg` 支持 `{"offset":0,"limit":50,"keyword":"张三"}`，字段含义与 `/v1/friends` 一致。桌面快捷方式不受该接口影响，也不需要 Token。
 
 ## 项目结构
 
@@ -209,7 +249,7 @@ app/src/main/java/com/zgcwkj/
     FriendSync.java       好友数据回传通道常量与落盘
     ShortcutHelp.java     桌面快捷方式创建与图标生成
     TriggerContract.java  外部触发契约：方法名、状态、错误码、Token、配置
-    FriendIndex.java      本地好友索引：按昵称 / 备注查 wxid
+    FriendIndex.java      本地好友索引：按昵称 / 备注查 wxid、分页获取好友列表
     CallReporter.java     微信进程向模块回传通话步骤结果
   xpwechatcall/
     XposedEntry.java      Xposed 入口
@@ -255,7 +295,7 @@ app/src/main/res/
 | `UiCallHelper` | 打开好友聊天页，按界面文案模拟点击「+」与通话按钮 |
 | `CallWidgetProvider` | 桌面控件，显示好友头像与名字，点击直接发起通话 |
 | `TriggerService` | 外部触发 HTTP 服务，Token 鉴权、限流、超时扫描 |
-| `TriggerApi` | 外部触发核心逻辑，HTTP 与 Provider 共用 |
+| `TriggerApi` | 外部触发核心逻辑，HTTP 与 Provider 共用；含好友查询与列表接口 |
 | `TriggerStore` | 请求状态持久化、幂等、忙状态、结果回调领取 |
 | `RootShell` | root 命令封装：唤醒解锁、后台拉起微信、执行内部 root 命令 |
 | `WatchdogHelper` | 写入 `/data/adb/service.d` 看门狗脚本，每 30 秒检查端口并拉起服务 |

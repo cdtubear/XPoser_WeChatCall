@@ -101,6 +101,100 @@ public final class FriendIndex {
     }
 
     /**
+     * 获取好友列表，返回 {total, count, offset, synced_at, stale, friends[]}
+     *
+     * @param offset  起始下标，小于 0 按 0 处理
+     * @param limit   返回数量，<= 0 表示不限制
+     * @param keyword 可选关键字，匹配 wxid / 展示名 / 备注 / 昵称
+     * @return 未同步过好友数据时返回 null
+     */
+    public static JSONObject list(Context context, int offset, int limit, String keyword) {
+        var raw = FriendSync.read(context);
+        if (raw == null) {
+            return null;
+        }
+        var normalizedKeyword = normalize(keyword);
+        var friends = new LinkedHashMap<String, JSONObject>();
+        long syncedAt = 0L;
+        try {
+            var root = new JSONObject(raw);
+            syncedAt = root.optLong(FriendSync.KEY_TIME, 0L);
+            var array = root.optJSONArray(FriendSync.KEY_FRIENDS);
+            if (array == null) {
+                array = new JSONArray();
+            }
+            for (var i = 0; i < array.length(); i++) {
+                var item = array.optJSONObject(i);
+                if (item == null) {
+                    continue;
+                }
+                var wxid = item.optString(FriendSync.KEY_USERNAME, "").trim();
+                if (wxid.isEmpty() || friends.containsKey(wxid)) {
+                    continue;
+                }
+                var remark = item.optString(FriendSync.KEY_REMARK, "").trim();
+                var nickname = item.optString(FriendSync.KEY_NICKNAME, "").trim();
+                var display = item.optString(FriendSync.KEY_NAME, "").trim();
+                if (display.isEmpty()) {
+                    display = !remark.isEmpty() ? remark : (!nickname.isEmpty() ? nickname : wxid);
+                }
+                if (!normalizedKeyword.isEmpty()
+                    && !matchesKeyword(wxid, display, remark, nickname, normalizedKeyword)) {
+                    continue;
+                }
+                var friend = new JSONObject();
+                friend.put("wxid", wxid);
+                friend.put("display", display);
+                friend.put("remark", remark);
+                friend.put("nickname", nickname);
+                friends.put(wxid, friend);
+            }
+        } catch (Exception e) {
+            LogHelp.e("XpWeChatCall", "list friends failed: " + e.getMessage(), e);
+            return null;
+        }
+        if (syncedAt <= 0) {
+            syncedAt = FriendSync.lastSyncTime(context);
+        }
+
+        var all = new ArrayList<>(friends.values());
+        var total = all.size();
+        var start = Math.max(0, offset);
+        if (start > total) {
+            start = total;
+        }
+        var end = total;
+        if (limit > 0) {
+            end = Math.min(total, start + limit);
+        }
+        var output = new JSONArray();
+        for (var i = start; i < end; i++) {
+            output.put(all.get(i));
+        }
+
+        var data = new JSONObject();
+        try {
+            data.put("total", total);
+            data.put("count", output.length());
+            data.put("offset", start);
+            data.put("synced_at", syncedAt);
+            data.put("stale", syncedAt <= 0 || System.currentTimeMillis() - syncedAt > STALE_MS);
+            data.put("friends", output);
+        } catch (Exception ignored) {
+            // 忽略
+        }
+        return data;
+    }
+
+    private static boolean matchesKeyword(String wxid, String display, String remark,
+                                          String nickname, String keyword) {
+        return normalize(wxid).contains(keyword)
+            || normalize(display).contains(keyword)
+            || normalize(remark).contains(keyword)
+            || normalize(nickname).contains(keyword);
+    }
+
+    /**
      * 好友数量，供健康检查使用
      */
     public static int count(Context context) {

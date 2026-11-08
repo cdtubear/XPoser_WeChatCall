@@ -271,7 +271,8 @@ public class TriggerService extends Service {
                 return;
             }
             var method = parts[0].toUpperCase(Locale.ROOT);
-            var path = parts[1];
+            var target = parts[1];
+            var path = target;
             var queryIndex = path.indexOf('?');
             if (queryIndex >= 0) {
                 path = path.substring(0, queryIndex);
@@ -305,6 +306,17 @@ public class TriggerService extends Service {
             }
             if ("POST".equals(method) && "/v1/resolve".equals(path)) {
                 sendJson(output, 200, TriggerApi.resolve(this, parseBody(body)));
+                return;
+            }
+            if ("GET".equals(method) && "/v1/friends".equals(path)) {
+                var params = parseQuery(target);
+                var offset = parseInt(params.get("offset"), 0);
+                var limit = parseInt(params.get("limit"), 0);
+                var keyword = params.get("keyword");
+                if (keyword == null) {
+                    keyword = params.get("q");
+                }
+                sendJson(output, 200, TriggerApi.listFriends(this, offset, limit, keyword));
                 return;
             }
             if ("POST".equals(method) && "/v1/call".equals(path)) {
@@ -435,6 +447,7 @@ public class TriggerService extends Service {
             json.put("endpoints", new org.json.JSONArray()
                 .put("GET /v1/health")
                 .put("POST /v1/resolve")
+                .put("GET /v1/friends")
                 .put("POST /v1/call")
                 .put("GET /v1/result/{request_id}"));
             json.put("auth", "Authorization: Bearer <token>");
@@ -510,6 +523,33 @@ public class TriggerService extends Service {
             result |= a[i] ^ b[i];
         }
         return result == 0;
+    }
+
+    /**
+     * 解析 URL 查询参数，同名参数保留第一个
+     */
+    private static Map<String, String> parseQuery(String target) {
+        var params = new HashMap<String, String>();
+        var index = target.indexOf('?');
+        if (index < 0 || index + 1 >= target.length()) {
+            return params;
+        }
+        for (var pair : target.substring(index + 1).split("&")) {
+            if (pair.isEmpty()) {
+                continue;
+            }
+            var split = pair.indexOf('=');
+            var key = split < 0 ? pair : pair.substring(0, split);
+            var value = split < 0 ? "" : pair.substring(split + 1);
+            try {
+                key = URLDecoder.decode(key, StandardCharsets.UTF_8.name());
+                value = URLDecoder.decode(value, StandardCharsets.UTF_8.name());
+            } catch (Exception ignored) {
+                // 保留原值
+            }
+            params.putIfAbsent(key, value);
+        }
+        return params;
     }
 
     private static int parseInt(String value, int fallback) {

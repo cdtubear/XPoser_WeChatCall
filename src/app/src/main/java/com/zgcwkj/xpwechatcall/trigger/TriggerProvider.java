@@ -60,6 +60,8 @@ public class TriggerProvider extends ContentProvider {
             switch (method) {
                 case TriggerContract.METHOD_RESOLVE:
                     return bundle(TriggerApi.resolve(context, parse(arg)));
+                case TriggerContract.METHOD_FRIENDS:
+                    return bundle(TriggerApi.listFriends(context, parse(arg)));
                 case TriggerContract.METHOD_START:
                     return bundle(TriggerApi.startCall(context, parse(arg)));
                 case TriggerContract.METHOD_QUERY:

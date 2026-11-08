@@ -60,6 +60,30 @@ public final class TriggerApi {
     }
 
     /**
+     * 获取好友列表
+     *
+     * 参数：offset（默认 0）、limit（<= 0 表示全部）、keyword（可选）
+     */
+    public static JSONObject listFriends(Context context, JSONObject request) {
+        var offset = request == null ? 0 : request.optInt("offset", 0);
+        var limit = request == null ? 0 : request.optInt("limit", 0);
+        var keyword = request == null ? "" : request.optString("keyword", "");
+        return listFriends(context, offset, limit, keyword);
+    }
+
+    /**
+     * 获取好友列表
+     */
+    public static JSONObject listFriends(Context context, int offset, int limit, String keyword) {
+        var data = FriendIndex.list(context, offset, limit, keyword);
+        if (data == null) {
+            return error(TriggerContract.E_NOT_SYNCED,
+                "friends not synced, import friends in the app first");
+        }
+        return with(ok(), "data", data);
+    }
+
+    /**
      * 发起通话
      *
      * 参数：wxid 或 name 二选一，type=video/voice，request_id 可选，

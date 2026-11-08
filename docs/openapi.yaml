@@ -156,6 +156,100 @@ paths:
         '429':
           $ref: '#/components/responses/RateLimited'
 
+  /v1/friends:
+    get:
+      tags: [ Friend ]
+      summary: 获取好友列表
+      description: |
+        返回本地已同步的全部好友，按微信好友同步顺序排列，并按 `wxid` 去重。
+
+        - 不传 `limit` 或 `limit <= 0` 时返回全部好友
+        - 使用 `offset` / `limit` 分页
+        - 使用 `keyword`（或 `q`）按 wxid、展示名、备注、昵称过滤
+        - 好友数据超过 7 天未更新时 `stale=true`
+      operationId: listFriends
+      parameters:
+        - name: offset
+          in: query
+          required: false
+          description: 起始下标，默认 0
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+        - name: limit
+          in: query
+          required: false
+          description: 返回数量；不传或小于等于 0 表示返回全部
+          schema:
+            type: integer
+            minimum: 0
+            example: 100
+        - name: keyword
+          in: query
+          required: false
+          description: 可选关键字，匹配 wxid / 展示名 / 备注 / 昵称；忽略大小写与全角半角
+          schema:
+            type: string
+            example: 张三
+        - name: q
+          in: query
+          required: false
+          description: '`keyword` 的别名'
+          schema:
+            type: string
+      responses:
+        '200':
+          description: 好友列表；业务错误时 `ok=false`
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/FriendsResponse'
+                  - $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                all:
+                  value:
+                    ok: true
+                    data:
+                      total: 2
+                      count: 2
+                      offset: 0
+                      synced_at: 1762300000000
+                      stale: false
+                      friends:
+                        - wxid: wxid_abc123
+                          display: 张三
+                          remark: 客户张三
+                          nickname: 三三
+                        - wxid: wxid_def456
+                          display: 李四
+                          remark: ''
+                          nickname: 李四
+                paged:
+                  value:
+                    ok: true
+                    data:
+                      total: 128
+                      count: 1
+                      offset: 20
+                      synced_at: 1762300000000
+                      stale: false
+                      friends:
+                        - wxid: wxid_abc123
+                          display: 张三
+                          remark: 客户张三
+                          nickname: 三三
+                notSynced:
+                  value:
+                    ok: false
+                    error: NOT_SYNCED
+                    message: friends not synced, import friends in the app first
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+
   /v1/call:
     post:
       tags: [ Call ]
@@ -439,7 +533,7 @@ components:
         wxid:
           type: string
           pattern: '^[A-Za-z0-9_.@-]{1,128}$'
-          description: 好友 wxid，可从 `/v1/resolve` 获取
+          description: 好友 wxid，可从 `/v1/friends` 或 `/v1/resolve` 获取
           example: wxid_abc123
         name:
           type: string
@@ -520,6 +614,62 @@ components:
           enum: [ true ]
         data:
           $ref: '#/components/schemas/FriendList'
+
+    FriendItem:
+      type: object
+      required: [ wxid, display, remark, nickname ]
+      properties:
+        wxid:
+          type: string
+          description: 好友 wxid
+          example: wxid_abc123
+        display:
+          type: string
+          description: 展示名，优先备注，其次昵称，最后 wxid
+          example: 张三
+        remark:
+          type: string
+          description: 好友备注，未设置时为空字符串
+          example: 客户张三
+        nickname:
+          type: string
+          description: 微信昵称，未获取时为空字符串
+          example: 三三
+
+    FriendsData:
+      type: object
+      required: [ total, count, offset, synced_at, stale, friends ]
+      properties:
+        total:
+          type: integer
+          description: 去重后的好友总数（应用 `keyword` 后）
+        count:
+          type: integer
+          description: 本次返回的好友数量
+        offset:
+          type: integer
+          description: 本次返回的起始下标
+        synced_at:
+          type: integer
+          format: int64
+          description: 最近一次同步时间，Unix 毫秒时间戳
+        stale:
+          type: boolean
+          description: 好友数据是否超过 7 天未更新
+        friends:
+          type: array
+          items:
+            $ref: '#/components/schemas/FriendItem'
+
+    FriendsResponse:
+      type: object
+      required: [ ok, data ]
+      properties:
+        ok:
+          type: boolean
+          enum: [ true ]
+        data:
+          $ref: '#/components/schemas/FriendsData'
 
     CallAcceptedResponse:
       type: object
