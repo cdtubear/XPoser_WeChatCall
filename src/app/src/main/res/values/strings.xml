@@ -13,6 +13,7 @@
 
     <string name="tab_home">首页</string>
     <string name="tab_log">日志</string>
+    <string name="tab_settings">设置</string>
     <string name="log_path_hint">/data/data/包名/files/logs/年月日.log</string>
     <string name="action_clear_log">清空</string>
     <string name="action_refresh">刷新</string>
@@ -59,6 +60,20 @@
 
     <string name="shortcut_type_video">视频通话</string>
     <string name="shortcut_type_voice">语音通话</string>
+
+    <string name="bt_connected_devices">已连接设备</string>
+    <string name="bt_no_connected_devices">暂无已连接设备，设备连接后会在这里显示详细信息</string>
+    <string name="bt_device_bonded">已配对</string>
+    <string name="bt_device_unbonded">未配对</string>
+    <string name="bt_device_notify_on">Notify 已订阅</string>
+    <string name="bt_device_notify_off">Notify 未订阅</string>
+    <string name="bt_device_connected_for">已连接 %1$s</string>
+    <string name="bt_device_mtu">MTU %1$d</string>
+    <string name="bt_device_command_count">指令 %1$d 条</string>
+    <string name="bt_device_last_command">最近指令：%1$s</string>
+    <string name="bt_device_no_command">尚未收到指令</string>
+    <string name="bt_device_last_seen">最近活动 %1$s前</string>
+    <string name="bt_token_required_tip">所有指令都必须先通过 Token 校验才会执行；校验失败不会触发通话。</string>
 
     <string name="author_url">https://github.com/cdtubear/XPoser_WeChatCall</string>
     <string name="footer_text">Powered by <a href="https://github.com/cdtubear/XPoser_WeChatCall">cdtubear</a>\n鸣谢 <a href="http://www.zgcwkj.cn">zgcwkj</a>（已获得 zgcwkj 本人授权并开源）</string>

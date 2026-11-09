@@ -21,6 +21,7 @@ import com.zgcwkj.comm.TriggerContract;
 import com.cdtubear.xpwechatcall.R;
 import com.cdtubear.xpwechatcall.TriggerSettingsActivity;
 
+import org.json.JSONArray;
 import org.json.JSONObject;
 
 import java.io.BufferedInputStream;
@@ -98,6 +99,11 @@ public class TriggerService extends Service {
     public static int bluetoothConnectedCount() {
         var bluetooth = sBluetooth;
         return bluetooth == null ? 0 : bluetooth.connectedCount();
+    }
+
+    public static JSONArray bluetoothDevices() {
+        var bluetooth = sBluetooth;
+        return bluetooth == null ? new JSONArray() : bluetooth.deviceDetails();
     }
 
     public static String bluetoothLastCommand() {

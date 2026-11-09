@@ -29,6 +29,7 @@ import android.os.ParcelUuid;
 import com.zgcwkj.comm.LogHelp;
 import com.zgcwkj.comm.TriggerContract;
 
+import org.json.JSONArray;
 import org.json.JSONObject;
 
 import java.nio.charset.StandardCharsets;
@@ -74,6 +75,14 @@ public final class BluetoothTriggerManager {
     private final Set<String> terminalSent = ConcurrentHashMap.newKeySet();
     /** 每个连接的 MTU，默认 23 */
     private final Map<String, Integer> mtuMap = new ConcurrentHashMap<>();
+    /** 连接建立时间，用于展示连接时长 */
+    private final Map<String, Long> connectedAt = new ConcurrentHashMap<>();
+    /** 最近一次通过 Token 校验的指令时间 */
+    private final Map<String, Long> lastSeen = new ConcurrentHashMap<>();
+    /** 每个连接成功执行的指令数量 */
+    private final Map<String, Integer> commandCount = new ConcurrentHashMap<>();
+    /** 每个连接最近执行的指令动作 */
+    private final Map<String, String> lastCommandByDevice = new ConcurrentHashMap<>();
 
     private BluetoothManager bluetoothManager;
     private BluetoothAdapter adapter;
@@ -114,6 +123,39 @@ public final class BluetoothTriggerManager {
 
     public String lastResult() {
         return lastResult;
+    }
+
+    /**
+     * 已连接设备的详细信息，供设置页列表展示
+     *
+     * 返回字段：name / address / bonded / connected_seconds / mtu /
+     * subscribed / command_count / last_command / last_seen_seconds
+     */
+    public JSONArray deviceDetails() {
+        var array = new JSONArray();
+        var now = System.currentTimeMillis();
+        for (var entry : connected.entrySet()) {
+            var address = entry.getKey();
+            var device = entry.getValue();
+            try {
+                var item = new JSONObject();
+                item.put("name", BtProtocol.deviceLabel(device));
+                item.put("address", address);
+                item.put("bonded", isBonded(device));
+                var since = connectedAt.getOrDefault(address, now);
+                item.put("connected_seconds", Math.max(0, (now - since) / 1000));
+                item.put("mtu", mtuMap.getOrDefault(address, 23));
+                item.put("subscribed", subscribed.contains(address));
+                item.put("command_count", commandCount.getOrDefault(address, 0));
+                item.put("last_command", lastCommandByDevice.getOrDefault(address, ""));
+                var seen = lastSeen.getOrDefault(address, 0L);
+                item.put("last_seen_seconds", seen <= 0 ? -1 : Math.max(0, (now - seen) / 1000));
+                array.put(item);
+            } catch (Exception ignored) {
+                // 忽略单个设备的序列化失败
+            }
+        }
+        return array;
     }
 
     /**
@@ -200,6 +242,10 @@ public final class BluetoothTriggerManager {
         requestDevices.clear();
         terminalSent.clear();
         mtuMap.clear();
+        connectedAt.clear();
+        lastSeen.clear();
+        commandCount.clear();
+        lastCommandByDevice.clear();
         txCharacteristic = null;
         if (unregister) {
             unregisterAdapterReceiver();
@@ -336,12 +382,18 @@ public final class BluetoothTriggerManager {
             var address = BtProtocol.deviceAddress(device);
             if (newState == BluetoothProfile.STATE_CONNECTED) {
                 connected.put(address, device);
+                connectedAt.put(address, System.currentTimeMillis());
+                commandCount.putIfAbsent(address, 0);
                 LogHelp.i(TAG, "BLE connected: " + BtProtocol.deviceLabel(device));
             } else if (newState == BluetoothProfile.STATE_DISCONNECTED) {
                 connected.remove(address);
                 buffers.remove(address);
                 subscribed.remove(address);
                 mtuMap.remove(address);
+                connectedAt.remove(address);
+                lastSeen.remove(address);
+                commandCount.remove(address);
+                lastCommandByDevice.remove(address);
                 LogHelp.i(TAG, "BLE disconnected: " + BtProtocol.deviceLabel(device));
             }
             notifyStatus();
@@ -432,23 +484,23 @@ public final class BluetoothTriggerManager {
             sendError(device, TriggerContract.E_BAD_REQUEST, "invalid json");
             return;
         }
-        if (TriggerContract.btRequireBond(context) && !isBonded(device)) {
-            sendError(device, TriggerContract.E_BT_NOT_BONDED,
-                "device is not bonded, pair it in system bluetooth settings first");
-            return;
-        }
+        // Token 校验是执行任何真实动作（包括发起通话）的前置条件
         if (!BtProtocol.authorized(context, request)) {
             sendError(device, TriggerContract.E_UNAUTHORIZED, "invalid token");
             return;
         }
 
+        var address = BtProtocol.deviceAddress(device);
         var action = request.optString("action", BtProtocol.ACTION_CALL).trim();
+        lastSeen.put(address, System.currentTimeMillis());
+        commandCount.merge(address, 1, Integer::sum);
+        lastCommandByDevice.put(address, action);
         lastCommand = action + " " + BtProtocol.deviceLabel(device);
         var response = BtCommandHandler.handle(context, request);
         var requestId = response.optString("request_id", "");
         if (BtProtocol.ACTION_CALL.equalsIgnoreCase(action)
             && !requestId.isEmpty() && response.optBoolean("ok", false)) {
-            requestDevices.put(requestId, BtProtocol.deviceAddress(device));
+            requestDevices.put(requestId, address);
         }
         send(device, response);
         notifyStatus();

@@ -13,7 +13,7 @@ import java.util.Locale;
  * 蓝牙指令分发
  *
  * 与 HTTP / ContentProvider 共用 TriggerApi，保证三条入口行为一致。
- * Token 与配对校验由 BluetoothTriggerManager 在调用这里之前完成。
+ * 这里会再次校验 Token，确保未通过校验的指令不会触发真实通话。
  */
 public final class BtCommandHandler {
 
@@ -23,6 +23,10 @@ public final class BtCommandHandler {
     public static JSONObject handle(Context context, JSONObject request) {
         if (request == null) {
             return BtProtocol.error(TriggerContract.E_BAD_REQUEST, "json body is required");
+        }
+        // 双重保险：即使调用方绕过管理器，也必须先通过 Token 校验才能执行真实动作
+        if (!BtProtocol.authorized(context, request)) {
+            return BtProtocol.error(TriggerContract.E_UNAUTHORIZED, "invalid token");
         }
         var action = request.optString("action", BtProtocol.ACTION_CALL)
             .trim().toLowerCase(Locale.ROOT);

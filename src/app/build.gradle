@@ -15,8 +15,8 @@ android {
         applicationId "com.cdtubear.xpwechatcall"
         minSdk 30
         targetSdk 36
-        versionCode 261006
-        versionName "1.1"
+        versionCode 261007
+        versionName "1.1.2"
     }
 
     signingConfigs {

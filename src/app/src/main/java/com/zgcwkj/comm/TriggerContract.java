@@ -71,7 +71,6 @@ public final class TriggerContract {
     public static final String E_CALL_BUTTON_NOT_FOUND = "CALL_BUTTON_NOT_FOUND";
     public static final String E_TIMEOUT = "TIMEOUT";
     public static final String E_INTERNAL = "INTERNAL";
-    public static final String E_BT_NOT_BONDED = "BT_NOT_BONDED";
     public static final String E_BT_UNAVAILABLE = "BT_UNAVAILABLE";
 
     /** 配置存储 */
@@ -89,7 +88,6 @@ public final class TriggerContract {
 
     /** 蓝牙触发配置 */
     public static final String K_BT_ENABLED = "bt_enabled";
-    public static final String K_BT_REQUIRE_BOND = "bt_require_bond";
 
     /** 默认值：默认关闭，开启后监听所有网卡，必须携带 Token */
     public static final boolean DEF_ENABLED = false;
@@ -99,7 +97,6 @@ public final class TriggerContract {
     public static final int DEF_RATE_LIMIT = 10;
     public static final int DEF_TIMEOUT = 30;
     public static final boolean DEF_BT_ENABLED = false;
-    public static final boolean DEF_BT_REQUIRE_BOND = true;
 
     private TriggerContract() {
     }
@@ -122,14 +119,6 @@ public final class TriggerContract {
 
     public static void setBtEnabled(Context context, boolean enabled) {
         prefs(context).edit().putBoolean(K_BT_ENABLED, enabled).commit();
-    }
-
-    public static boolean btRequireBond(Context context) {
-        return prefs(context).getBoolean(K_BT_REQUIRE_BOND, DEF_BT_REQUIRE_BOND);
-    }
-
-    public static void setBtRequireBond(Context context, boolean require) {
-        prefs(context).edit().putBoolean(K_BT_REQUIRE_BOND, require).commit();
     }
 
     public static String bind(Context context) {

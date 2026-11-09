@@ -80,7 +80,7 @@ paths:
                 healthy:
                   value:
                     ok: true
-                    module_version: '1.1'
+                    module_version: '1.1.2'
                     enabled: true
                     service_running: true
                     http_enabled: true
@@ -89,10 +89,10 @@ paths:
                     port: 8790
                     token_set: true
                     bt_enabled: false
-                    bt_require_bond: true
                     bt_running: false
                     bt_advertising: false
                     bt_connected: 0
+                    bt_devices: []
                     bt_last_command: ''
                     bt_last_result: ''
                     bt_service_uuid: 6e400001-b5a3-f393-e0a9-e50e24dcca9e
@@ -791,7 +791,6 @@ components:
             - DEVICE_LOCKED
             - CHAT_OPEN_FAILED
             - CALL_BUTTON_NOT_FOUND
-            - BT_NOT_BONDED
             - BT_UNAVAILABLE
             - TIMEOUT
             - INTERNAL
@@ -846,9 +845,6 @@ components:
         bt_enabled:
           type: boolean
           description: 蓝牙触发开关
-        bt_require_bond:
-          type: boolean
-          description: 是否仅允许系统蓝牙中已配对的设备发送指令
         bt_running:
           type: boolean
           description: BLE GATT Server 是否已启动
@@ -858,6 +854,11 @@ components:
         bt_connected:
           type: integer
           description: 当前已连接的 BLE 设备数量
+        bt_devices:
+          type: array
+          description: 已连接 BLE 设备的详细信息
+          items:
+            $ref: '#/components/schemas/BtDevice'
         bt_last_command:
           type: string
           description: 最近一条蓝牙指令，例如 `call ...`
@@ -913,6 +914,40 @@ components:
         auth:
           type: string
 
+    BtDevice:
+      type: object
+      description: 已连接 BLE 设备的详细信息
+      properties:
+        name:
+          type: string
+          description: 设备名称，无法读取时回退为地址
+        address:
+          type: string
+          description: 蓝牙地址
+        bonded:
+          type: boolean
+          description: 是否已在系统蓝牙中配对（仅展示，不影响指令执行）
+        connected_seconds:
+          type: integer
+          format: int64
+          description: 已连接时长（秒）
+        mtu:
+          type: integer
+          description: 当前协商 MTU，默认 23
+        subscribed:
+          type: boolean
+          description: 是否已订阅 TX Notify
+        command_count:
+          type: integer
+          description: 通过 Token 校验的指令数量
+        last_command:
+          type: string
+          description: 最近一条通过校验的 action，尚未收到时为空字符串
+        last_seen_seconds:
+          type: integer
+          format: int64
+          description: 距最近一条有效指令的秒数，-1 表示尚未收到
+
     ErrorResponse:
       type: object
       required: [ ok, error, message ]
@@ -941,7 +976,6 @@ components:
             - DEVICE_LOCKED
             - CHAT_OPEN_FAILED
             - CALL_BUTTON_NOT_FOUND
-            - BT_NOT_BONDED
             - BT_UNAVAILABLE
             - TIMEOUT
             - INTERNAL

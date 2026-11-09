@@ -16,5 +16,9 @@
         <item name="android:windowLightStatusBar">false</item>
         <!-- 底部 Tab 栏为白色，导航栏图标用深色 -->
         <item name="android:windowLightNavigationBar">true</item>
+        <!-- 统一控件强调色与窗口背景 -->
+        <item name="android:colorAccent">@color/primary</item>
+        <item name="android:colorControlActivated">@color/primary</item>
+        <item name="android:windowBackground">@color/background</item>
     </style>
 </resources>

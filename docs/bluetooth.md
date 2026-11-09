@@ -5,17 +5,17 @@
 - 默认关闭，不影响 HTTP、ContentProvider、桌面快捷方式和桌面控件
 - 与 HTTP 接口共用同一套好友匹配、忙状态、幂等、超时和结果存储逻辑
 - 使用 Nordic UART Service 兼容 UUID，常见的 BLE UART 示例可以直接复用
-- 每条指令都必须携带 Token；可选只允许系统蓝牙中已配对的设备
+- 每条指令都必须携带 Token，校验通过才会执行真实动作
 
 ## 启用
 
-1. 打开 App 右上角 **⚙ → 外部触发**
+1. 点击 App 底部导航 **设置**
 2. 在「蓝牙触发（BLE）」区域打开 **启用蓝牙触发**
 3. Android 12+ 会申请「附近的设备」权限（`BLUETOOTH_CONNECT` / `BLUETOOTH_ADVERTISE`），请允许
 4. 打开手机系统蓝牙
 5. 如需要更高吞吐量，在设备端连接后协商 MTU（推荐 247）
 
-启用后，前台通知会显示 `BLE 广播中`，设置页会显示 BLE 服务、广播和连接状态。
+启用后，前台通知会显示 `BLE 广播中`，设置页会显示 BLE 服务、广播和连接状态。设备连接后，「已连接设备」区域会实时刷新设备详情（名称、地址、连接时长、MTU、Notify 状态、指令数量与最近指令）。
 
 > HTTP 与蓝牙是独立开关：只开蓝牙时服务仍会运行，但不会监听 HTTP 端口。两者都关闭时服务停止。
 
@@ -50,15 +50,14 @@
 ## 鉴权与安全
 
 - 所有指令都必须包含 `token`，值为设置页「访问 Token」中的字符串
+- Token 校验在 BLE 指令入口和执行入口各做一次，任何一步失败都不会触发通话
 - Token 比较使用常量时间算法，避免通过响应时间猜测
-- 设置页「仅允许已配对设备」默认开启：
-  - 开启时，未在系统蓝牙设置中配对的设备发送指令会收到 `BT_NOT_BONDED`
-  - 关闭时仍会校验 Token，但允许任意 BLE 设备连接
+- 未通过校验的指令只返回 `UNAUTHORIZED`，不会记录为有效指令
 - Token 在 BLE 链路上以明文 JSON 传输，建议：
-  - 保持「仅允许已配对设备」开启
-  - 在系统蓝牙中完成配对，让链路启用加密
+  - 只在可信设备上保存 Token
   - 不要把 Token 写死到公开固件或提交到仓库
   - 定期在设置页重置 Token
+- 已连接设备详情中的 `bonded` 字段仅用于展示，配对与否不影响指令执行
 
 ## 动作
 
@@ -119,13 +118,27 @@
 | --- | --- |
 | `http_enabled` / `http_running` | HTTP 开关 / 端口是否在监听 |
 | `bt_enabled` | 蓝牙触发开关 |
-| `bt_require_bond` | 是否仅允许已配对设备 |
 | `bt_running` | GATT Server 是否已启动 |
 | `bt_advertising` | 是否正在广播 |
 | `bt_connected` | 当前连接数 |
+| `bt_devices` | 已连接设备详情数组 |
 | `bt_last_command` | 最近一条指令 |
 | `bt_last_result` | 最近一条终态结果 |
 | `bt_service_uuid` / `bt_rx_uuid` / `bt_tx_uuid` | BLE UUID |
+
+`bt_devices` 中每个元素的字段：
+
+| 字段 | 说明 |
+| --- | --- |
+| `name` | 设备名称，无法读取时回退为地址 |
+| `address` | 蓝牙地址 |
+| `bonded` | 是否已在系统蓝牙中配对（仅展示） |
+| `connected_seconds` | 已连接时长（秒） |
+| `mtu` | 当前协商 MTU |
+| `subscribed` | 是否已订阅 TX Notify |
+| `command_count` | 通过 Token 校验的指令数量 |
+| `last_command` | 最近一条通过校验的 action |
+| `last_seen_seconds` | 距最近一条有效指令的秒数，`-1` 表示尚未收到 |
 
 ### friends
 
@@ -212,7 +225,7 @@
 6. 点击 **Send**（Write 或 Write Without Response 均可）
 7. 在 TX 通知中查看响应
 
-如果收不到响应，先确认 TX 是否已订阅，再检查 Token 和「仅允许已配对设备」设置。
+如果收不到响应，先确认 TX 是否已订阅，再检查 Token 是否正确。
 
 ## ESP32 / Arduino 示例
 
@@ -301,7 +314,6 @@ String cmd = String("{\"token\":\"") + TOKEN +
 | `BAD_REQUEST` | JSON 无效、缺少字段、帧过大或未知 action |
 | `UNAUTHORIZED` | Token 错误 |
 | `DISABLED` | 蓝牙触发未开启 |
-| `BT_NOT_BONDED` | 设备未在系统蓝牙中配对（开启「仅允许已配对设备」时） |
 | `BT_UNAVAILABLE` | 蓝牙不可用（保留错误码） |
 | `BUSY` | 已有进行中的通话请求 |
 | `FRIEND_NOT_FOUND` | 找不到好友 |
@@ -328,7 +340,8 @@ String cmd = String("{\"token\":\"") + TOKEN +
 | 搜不到设备 | 确认蓝牙触发已开启、系统蓝牙已打开、前台通知显示 `BLE 广播中`；部分机型需要关闭再打开蓝牙 |
 | 能连接但写入失败 | 确认写入的是 RX 特征；确认 Android 12+ 已授予「附近的设备」权限 |
 | 写入成功但收不到响应 | 确认已订阅 TX Notify；确认 Token 正确；查看 `adb logcat -s XpWeChatCall` |
-| 返回 `BT_NOT_BONDED` | 在系统蓝牙设置中先配对，或关闭「仅允许已配对设备」 |
+| 返回 `UNAUTHORIZED` | 检查指令中的 `token` 是否与设置页一致；重置 Token 后需要更新设备端 |
+| 已连接但列表不显示 | 确认蓝牙触发已开启；设备连接后列表每 2 秒自动刷新 |
 | 响应分片很多 | 设备端协商更大的 MTU，推荐 247 |
 | 通话返回 `DEVICE_LOCKED` | 自动解锁仅支持滑动锁；有密码时请保持屏幕常亮或手动解锁 |
 | 服务只开蓝牙但被杀后不恢复 | 打开 root 看门狗；v3 看门狗通过 `files/service_heartbeat` 心跳判断存活，不再依赖 HTTP 端口 |

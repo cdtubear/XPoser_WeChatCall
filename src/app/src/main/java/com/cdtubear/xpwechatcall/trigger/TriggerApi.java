@@ -241,7 +241,7 @@ public final class TriggerApi {
     public static JSONObject health(Context context) {
         var response = ok();
         try {
-            response.put("module_version", "1.1");
+            response.put("module_version", "1.1.2");
             response.put("enabled", TriggerContract.isEnabled(context));
             response.put("service_running", TriggerService.isRunning());
             response.put("http_enabled", TriggerContract.isEnabled(context));
@@ -250,10 +250,10 @@ public final class TriggerApi {
             response.put("port", TriggerContract.port(context));
             response.put("token_set", !TriggerContract.token(context).isEmpty());
             response.put("bt_enabled", TriggerContract.isBtEnabled(context));
-            response.put("bt_require_bond", TriggerContract.btRequireBond(context));
             response.put("bt_running", TriggerService.isBluetoothRunning());
             response.put("bt_advertising", TriggerService.isBluetoothAdvertising());
             response.put("bt_connected", TriggerService.bluetoothConnectedCount());
+            response.put("bt_devices", TriggerService.bluetoothDevices());
             response.put("bt_last_command", TriggerService.bluetoothLastCommand());
             response.put("bt_last_result", TriggerService.bluetoothLastResult());
             response.put("bt_service_uuid", BtProtocol.SERVICE_UUID.toString());

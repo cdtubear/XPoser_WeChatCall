@@ -6,13 +6,19 @@ import android.app.AlertDialog;
 import android.content.ClipData;
 import android.content.ClipboardManager;
 import android.content.Context;
+import android.content.Intent;
 import android.content.pm.PackageManager;
+import android.content.res.ColorStateList;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
+import android.view.LayoutInflater;
+import android.view.View;
 import android.view.WindowInsets;
 import android.widget.EditText;
+import android.widget.ImageView;
+import android.widget.LinearLayout;
 import android.widget.Switch;
 import android.widget.TextView;
 import android.widget.Toast;
@@ -27,25 +33,35 @@ import com.cdtubear.xpwechatcall.trigger.TriggerApi;
 import com.cdtubear.xpwechatcall.trigger.TriggerService;
 import com.cdtubear.xpwechatcall.trigger.WatchdogHelper;
 
+import org.json.JSONArray;
 import org.json.JSONObject;
 
 import java.io.File;
 import java.util.ArrayList;
 
 /**
- * 外部触发设置页
+ * 设置页
  *
- * 管理 Token、监听地址、自动解锁、限流与结果回调。
+ * 管理 Token、监听地址、自动解锁、限流、结果回调与蓝牙触发。
+ * 与首页、日志同级，通过同一套底部导航切换。
  */
 public class TriggerSettingsActivity extends Activity {
 
     private static final int REQ_PERMISSIONS = 2001;
 
+    /** 底部导航：首页 / 日志 / 设置 */
+    public static final int TAB_HOME = 0;
+    public static final int TAB_LOG = 1;
+    public static final int TAB_SETTINGS = 2;
+    public static final String EXTRA_TAB = "extra_tab";
+
+    /** 已连接设备列表刷新间隔 */
+    private static final long DEVICE_POLL_MS = 2000;
+
     private Switch swEnable;
     private Switch swUnlock;
     private Switch swWatchdog;
     private Switch swBt;
-    private Switch swBtBond;
     private TextView tvStatus;
     private TextView tvToken;
     private TextView tvHint;
@@ -57,10 +73,22 @@ public class TriggerSettingsActivity extends Activity {
     private EditText etTimeout;
     private EditText etCallback;
     private EditText etPackages;
+    private LinearLayout llBtDevices;
+    private TextView tvBtDevicesEmpty;
 
     /** 程序化更新 Switch 时避免触发保存逻辑 */
     private boolean syncingUi;
     private boolean keepAliveBusy;
+
+    private final Handler deviceHandler = new Handler(Looper.getMainLooper());
+    private final Runnable devicePoll = new Runnable() {
+        @Override
+        public void run() {
+            updateBtStatus();
+            renderBtDevices();
+            deviceHandler.postDelayed(this, DEVICE_POLL_MS);
+        }
+    };
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -70,6 +98,7 @@ public class TriggerSettingsActivity extends Activity {
 
         bindViews();
         applyInsets();
+        bindBottomNav();
         loadSettings();
         bindActions();
     }
@@ -81,11 +110,20 @@ public class TriggerSettingsActivity extends Activity {
         syncingUi = true;
         swEnable.setChecked(TriggerContract.isEnabled(this));
         swBt.setChecked(TriggerContract.isBtEnabled(this));
-        swBtBond.setChecked(TriggerContract.btRequireBond(this));
         syncingUi = false;
         updateStatus();
         updateBtStatus();
+        renderBtDevices();
         refreshKeepAliveAsync();
+        // 已连接设备详情需要实时刷新
+        deviceHandler.removeCallbacks(devicePoll);
+        deviceHandler.postDelayed(devicePoll, DEVICE_POLL_MS);
+    }
+
+    @Override
+    protected void onPause() {
+        super.onPause();
+        deviceHandler.removeCallbacks(devicePoll);
     }
 
     private void bindViews() {
@@ -93,7 +131,6 @@ public class TriggerSettingsActivity extends Activity {
         swUnlock = findViewById(R.id.sw_unlock);
         swWatchdog = findViewById(R.id.sw_watchdog);
         swBt = findViewById(R.id.sw_bt);
-        swBtBond = findViewById(R.id.sw_bt_bond);
         tvStatus = findViewById(R.id.tv_status);
         tvToken = findViewById(R.id.tv_token);
         tvHint = findViewById(R.id.tv_hint);
@@ -105,23 +142,75 @@ public class TriggerSettingsActivity extends Activity {
         etTimeout = findViewById(R.id.et_timeout);
         etCallback = findViewById(R.id.et_callback);
         etPackages = findViewById(R.id.et_packages);
+        llBtDevices = findViewById(R.id.ll_bt_devices);
+        tvBtDevicesEmpty = findViewById(R.id.tv_bt_devices_empty);
     }
 
     /**
-     * targetSdk 36 强制 edge-to-edge，标题栏延伸到状态栏下方
+     * 底部导航：设置页高亮「设置」，首页/日志回到 MainActivity 对应 Tab
+     */
+    private void bindBottomNav() {
+        findViewById(R.id.tab_home).setOnClickListener(v -> openMain(MainActivity.TAB_HOME));
+        findViewById(R.id.tab_log).setOnClickListener(v -> openMain(MainActivity.TAB_LOG));
+        // 已经在设置页，点击「设置」仅回到顶部
+        findViewById(R.id.tab_settings).setOnClickListener(v -> {
+            var scroll = findViewById(R.id.scroll);
+            if (scroll != null) {
+                scroll.scrollTo(0, 0);
+            }
+        });
+        applyNavState();
+    }
+
+    private void openMain(int tab) {
+        var intent = new Intent(this, MainActivity.class);
+        intent.putExtra(MainActivity.EXTRA_TAB, tab);
+        intent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP);
+        startActivity(intent);
+        finish();
+    }
+
+    private void applyNavState() {
+        var primary = getResources().getColor(R.color.primary);
+        var disabled = getResources().getColor(R.color.text_disabled);
+        var primaryList = ColorStateList.valueOf(primary);
+        var disabledList = ColorStateList.valueOf(disabled);
+        ((TextView) findViewById(R.id.tab_home_text)).setTextColor(disabled);
+        ((TextView) findViewById(R.id.tab_log_text)).setTextColor(disabled);
+        ((TextView) findViewById(R.id.tab_settings_text)).setTextColor(primary);
+        ((ImageView) findViewById(R.id.tab_home_icon)).setImageTintList(disabledList);
+        ((ImageView) findViewById(R.id.tab_log_icon)).setImageTintList(disabledList);
+        ((ImageView) findViewById(R.id.tab_settings_icon)).setImageTintList(primaryList);
+        findViewById(R.id.tab_home_icon).setAlpha(0.5f);
+        findViewById(R.id.tab_log_icon).setAlpha(0.5f);
+        findViewById(R.id.tab_settings_icon).setAlpha(1f);
+    }
+
+    /**
+     * targetSdk 36 强制 edge-to-edge，标题栏与底部导航延伸到系统栏下方
      */
     private void applyInsets() {
         var root = findViewById(R.id.root);
+        var spacer = findViewById(R.id.status_bar_spacer);
         var titleBar = findViewById(R.id.title_bar);
         var scroll = findViewById(R.id.scroll);
-        var titleTop = titleBar.getPaddingTop();
+        var tabBar = findViewById(R.id.tab_bar);
+        var tabHeight = getResources().getDimensionPixelSize(R.dimen.tab_bar_height);
+        var titlePaddingStart = titleBar.getPaddingStart();
+        var titlePaddingEnd = titleBar.getPaddingEnd();
         root.setOnApplyWindowInsetsListener((view, insets) -> {
             var bars = insets.getInsets(
                 WindowInsets.Type.systemBars() | WindowInsets.Type.displayCutout());
-            view.setPadding(bars.left, 0, bars.right, 0);
-            titleBar.setPadding(titleBar.getPaddingLeft(), titleTop + bars.top,
-                titleBar.getPaddingRight(), titleBar.getPaddingBottom());
-            scroll.setPadding(0, 0, 0, bars.bottom);
+            var spacerParams = spacer.getLayoutParams();
+            spacerParams.height = bars.top;
+            spacer.setLayoutParams(spacerParams);
+            titleBar.setPaddingRelative(titlePaddingStart + bars.left, 0,
+                titlePaddingEnd + bars.right, 0);
+            scroll.setPadding(bars.left, 0, bars.right, 0);
+            tabBar.setPadding(bars.left, 0, bars.right, bars.bottom);
+            var tabParams = tabBar.getLayoutParams();
+            tabParams.height = tabHeight + bars.bottom;
+            tabBar.setLayoutParams(tabParams);
             return insets;
         });
     }
@@ -130,7 +219,6 @@ public class TriggerSettingsActivity extends Activity {
         swEnable.setChecked(TriggerContract.isEnabled(this));
         swUnlock.setChecked(TriggerContract.autoUnlock(this));
         swBt.setChecked(TriggerContract.isBtEnabled(this));
-        swBtBond.setChecked(TriggerContract.btRequireBond(this));
         tvToken.setText(TriggerContract.token(this));
         etBind.setText(TriggerContract.bind(this));
         etPort.setText(String.valueOf(TriggerContract.port(this)));
@@ -140,11 +228,11 @@ public class TriggerSettingsActivity extends Activity {
         etPackages.setText(TriggerContract.allowedPackages(this));
         updateStatus();
         updateBtStatus();
+        renderBtDevices();
         updateHint();
     }
 
     private void bindActions() {
-        findViewById(R.id.btn_back).setOnClickListener(v -> finish());
         findViewById(R.id.btn_copy_token).setOnClickListener(v -> copyToken());
         findViewById(R.id.btn_reset_token).setOnClickListener(v -> confirmResetToken());
         findViewById(R.id.btn_save).setOnClickListener(v -> saveAndApply());
@@ -161,11 +249,6 @@ public class TriggerSettingsActivity extends Activity {
             }
         });
         swBt.setOnCheckedChangeListener((buttonView, isChecked) -> {
-            if (!syncingUi) {
-                saveAndApply();
-            }
-        });
-        swBtBond.setOnCheckedChangeListener((buttonView, isChecked) -> {
             if (!syncingUi) {
                 saveAndApply();
             }
@@ -235,7 +318,6 @@ public class TriggerSettingsActivity extends Activity {
         TriggerContract.prefs(this).edit()
             .putBoolean(TriggerContract.K_ENABLED, enabled)
             .putBoolean(TriggerContract.K_BT_ENABLED, btEnabled)
-            .putBoolean(TriggerContract.K_BT_REQUIRE_BOND, swBtBond.isChecked())
             .putString(TriggerContract.K_BIND, bind)
             .putInt(TriggerContract.K_PORT, port)
             .putBoolean(TriggerContract.K_AUTO_UNLOCK, swUnlock.isChecked())
@@ -556,6 +638,100 @@ public class TriggerSettingsActivity extends Activity {
             text.append("\n最近结果: ").append(lastResult);
         }
         tvBtStatus.setText(text.toString());
+    }
+
+    /**
+     * 渲染已连接设备列表，支持同时展示多台设备
+     */
+    private void renderBtDevices() {
+        if (llBtDevices == null || tvBtDevicesEmpty == null) {
+            return;
+        }
+        JSONArray array;
+        try {
+            array = TriggerService.bluetoothDevices();
+        } catch (Throwable e) {
+            array = new JSONArray();
+        }
+        var count = array.length();
+        tvBtDevicesEmpty.setVisibility(count == 0 ? View.VISIBLE : View.GONE);
+        llBtDevices.setVisibility(count == 0 ? View.GONE : View.VISIBLE);
+        // 数量未变化时直接复用已有行，避免每 2 秒重建导致闪烁
+        if (llBtDevices.getChildCount() != count) {
+            llBtDevices.removeAllViews();
+            for (var i = 0; i < count; i++) {
+                llBtDevices.addView(LayoutInflater.from(this)
+                    .inflate(R.layout.item_bt_device, llBtDevices, false));
+            }
+        }
+        for (var i = 0; i < count; i++) {
+            var item = array.optJSONObject(i);
+            if (item != null) {
+                bindBtDevice(llBtDevices.getChildAt(i), item);
+            }
+        }
+    }
+
+    /**
+     * 把单台设备详情绑定到列表行
+     */
+    private void bindBtDevice(View row, JSONObject device) {
+        if (row == null) {
+            return;
+        }
+        var address = device.optString("address", "");
+        var name = device.optString("name", "");
+        var bonded = device.optBoolean("bonded", false);
+        var subscribed = device.optBoolean("subscribed", false);
+        var mtu = device.optInt("mtu", 23);
+        var commands = device.optInt("command_count", 0);
+        var connectedSeconds = device.optLong("connected_seconds", 0);
+        var lastSeenSeconds = device.optLong("last_seen_seconds", -1);
+        var lastCommand = device.optString("last_command", "");
+
+        var tvName = (TextView) row.findViewById(R.id.tv_bt_device_name);
+        var tvBond = (TextView) row.findViewById(R.id.tv_bt_device_bond);
+        var tvAddress = (TextView) row.findViewById(R.id.tv_bt_device_address);
+        var tvMeta = (TextView) row.findViewById(R.id.tv_bt_device_meta);
+        var tvState = (TextView) row.findViewById(R.id.tv_bt_device_state);
+        var tvLast = (TextView) row.findViewById(R.id.tv_bt_device_last);
+
+        tvName.setText(name.isEmpty() ? address : name);
+        tvAddress.setText(address);
+        tvBond.setText(bonded
+            ? getString(R.string.bt_device_bonded)
+            : getString(R.string.bt_device_unbonded));
+        tvBond.setBackgroundResource(bonded
+            ? R.drawable.bg_pill_primary
+            : R.drawable.bg_pill_neutral);
+        tvBond.setTextColor(getResources().getColor(
+            bonded ? R.color.primary : R.color.text_hint));
+
+        tvMeta.setText(getString(R.string.bt_device_connected_for, duration(connectedSeconds))
+            + " · " + getString(R.string.bt_device_mtu, mtu)
+            + " · " + getString(subscribed
+                ? R.string.bt_device_notify_on
+                : R.string.bt_device_notify_off));
+        tvState.setText(getString(R.string.bt_device_command_count, commands)
+            + (lastSeenSeconds >= 0
+                ? " · " + getString(R.string.bt_device_last_seen, duration(lastSeenSeconds))
+                : ""));
+        tvLast.setText(lastCommand.isEmpty()
+            ? getString(R.string.bt_device_no_command)
+            : getString(R.string.bt_device_last_command, lastCommand));
+    }
+
+    /**
+     * 把秒数转成易读的时长
+     */
+    private static String duration(long seconds) {
+        if (seconds < 60) {
+            return seconds + " 秒";
+        }
+        if (seconds < 3600) {
+            return (seconds / 60) + " 分 " + (seconds % 60) + " 秒";
+        }
+        return (seconds / 3600) + " 时 " + ((seconds % 3600) / 60) + " 分";
     }
 
     private void updateHint() {

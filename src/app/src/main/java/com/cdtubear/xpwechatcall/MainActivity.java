@@ -43,6 +43,13 @@ public class MainActivity extends Activity {
     /** 选择图标请求码 */
     private static final int REQ_PICK_ICON = 1001;
 
+    /** 底部导航：首页 / 日志 / 设置 */
+    public static final int TAB_HOME = 0;
+    public static final int TAB_LOG = 1;
+    public static final int TAB_SETTINGS = 2;
+    /** 外部跳转时指定要展示的 Tab */
+    public static final String EXTRA_TAB = "extra_tab";
+
     /** 全部好友，与配置文件内容一致 */
     private final List<Friend> friends = new ArrayList<>();
     /** 按搜索关键字过滤后实际展示的好友 */
@@ -59,6 +66,8 @@ public class MainActivity extends Activity {
     private View tabHomeText;
     private View tabLogIcon;
     private View tabLogText;
+    private View tabSettingsIcon;
+    private View tabSettingsText;
     private TextView logText;
     private View btnImport;
     private View btnAdd;
@@ -67,8 +76,7 @@ public class MainActivity extends Activity {
     private Switch logSwitch;
     private EditText searchInput;
     private View searchClear;
-    /** 列表下边框与底部占位，随列表是否为空切换显示 */
-    private View listBottomDivider;
+    /** 内容不足一屏时把版权信息推到底部的占位 */
     private View footerSpacer;
 
     /** 编辑弹窗中的图标预览与当前选中的图标路径 */
@@ -87,7 +95,6 @@ public class MainActivity extends Activity {
         applyWindowInsets();
 
         listContainer = findViewById(R.id.list_container);
-        listBottomDivider = findViewById(R.id.list_bottom_divider);
         footerSpacer = findViewById(R.id.footer_spacer);
         emptyView = findViewById(R.id.empty_view);
         searchEmptyView = findViewById(R.id.search_empty_view);
@@ -97,6 +104,8 @@ public class MainActivity extends Activity {
         tabHomeText = findViewById(R.id.tab_home_text);
         tabLogIcon = findViewById(R.id.tab_log_icon);
         tabLogText = findViewById(R.id.tab_log_text);
+        tabSettingsIcon = findViewById(R.id.tab_settings_icon);
+        tabSettingsText = findViewById(R.id.tab_settings_text);
         logText = findViewById(R.id.log_text);
         btnImport = findViewById(R.id.btn_import);
         btnAdd = findViewById(R.id.btn_add);
@@ -128,12 +137,11 @@ public class MainActivity extends Activity {
 
         btnAdd.setOnClickListener(v -> showFriendDialog(null));
         btnImport.setOnClickListener(v -> importFromWeChat());
-        findViewById(R.id.btn_api).setOnClickListener(v ->
-            startActivity(new Intent(this, TriggerSettingsActivity.class)));
         btnLogRefresh.setOnClickListener(v -> showLog());
         btnLogClear.setOnClickListener(v -> clearLog());
-        findViewById(R.id.tab_home).setOnClickListener(v -> switchTab(true));
-        findViewById(R.id.tab_log).setOnClickListener(v -> switchTab(false));
+        findViewById(R.id.tab_home).setOnClickListener(v -> switchTab(TAB_HOME));
+        findViewById(R.id.tab_log).setOnClickListener(v -> switchTab(TAB_LOG));
+        findViewById(R.id.tab_settings).setOnClickListener(v -> openSettings());
 
         // 文件日志开关：与配置保持一致，切换后立即生效
         logSwitch.setChecked(ConfigHelp.isLogEnabled(this));
@@ -167,9 +175,36 @@ public class MainActivity extends Activity {
         findViewById(R.id.tv_footer).setOnClickListener(v -> startActivity(new Intent(
             Intent.ACTION_VIEW, Uri.parse(getString(R.string.author_url)))));
 
-        switchTab(true);
+        switchTab(tabFromIntent(getIntent()));
         refresh();
         LogHelp.i("XpWeChatCall", "main page opened, friends=" + friends.size());
+    }
+
+    @Override
+    protected void onNewIntent(Intent intent) {
+        super.onNewIntent(intent);
+        setIntent(intent);
+        switchTab(tabFromIntent(intent));
+    }
+
+    /**
+     * 读取 Intent 中指定的 Tab，默认首页
+     */
+    private int tabFromIntent(Intent intent) {
+        if (intent == null) {
+            return TAB_HOME;
+        }
+        var tab = intent.getIntExtra(EXTRA_TAB, TAB_HOME);
+        return tab == TAB_LOG ? TAB_LOG : TAB_HOME;
+    }
+
+    /**
+     * 打开设置页：设置与首页、日志同级，独立页面复用同一套底部导航
+     */
+    private void openSettings() {
+        var intent = new Intent(this, TriggerSettingsActivity.class);
+        intent.putExtra(TriggerSettingsActivity.EXTRA_TAB, TriggerSettingsActivity.TAB_SETTINGS);
+        startActivity(intent);
     }
 
     /**
@@ -207,19 +242,30 @@ public class MainActivity extends Activity {
     }
 
     /**
-     * 切换底部Tab
+     * 切换底部 Tab
      *
-     * @param home true=首页，false=日志
+     * 设置页是独立 Activity，由底部导航直接打开，这里只处理首页与日志。
+     *
+     * @param tab {@link #TAB_HOME} 或 {@link #TAB_LOG}
      */
-    private void switchTab(boolean home) {
+    private void switchTab(int tab) {
+        var home = tab != TAB_LOG;
         pageHome.setVisibility(home ? View.VISIBLE : View.GONE);
         pageLog.setVisibility(home ? View.GONE : View.VISIBLE);
         var primary = getResources().getColor(R.color.primary);
         var disabled = getResources().getColor(R.color.text_disabled);
         ((TextView) tabHomeText).setTextColor(home ? primary : disabled);
         ((TextView) tabLogText).setTextColor(home ? disabled : primary);
+        ((TextView) tabSettingsText).setTextColor(disabled);
         tabHomeIcon.setAlpha(home ? 1f : 0.5f);
         tabLogIcon.setAlpha(home ? 0.5f : 1f);
+        tabSettingsIcon.setAlpha(0.5f);
+        ((ImageView) tabHomeIcon).setImageTintList(
+            android.content.res.ColorStateList.valueOf(home ? primary : disabled));
+        ((ImageView) tabLogIcon).setImageTintList(
+            android.content.res.ColorStateList.valueOf(home ? disabled : primary));
+        ((ImageView) tabSettingsIcon).setImageTintList(
+            android.content.res.ColorStateList.valueOf(disabled));
 
         // 右上角操作随 Tab 切换：首页=导入/添加，日志=刷新/清空
         btnImport.setVisibility(home ? View.VISIBLE : View.GONE);
@@ -309,9 +355,8 @@ public class MainActivity extends Activity {
         var hasRows = !shown.isEmpty();
         emptyView.setVisibility(noFriends ? View.VISIBLE : View.GONE);
         searchEmptyView.setVisibility(!noFriends && !hasRows ? View.VISIBLE : View.GONE);
-        // 没有好友行时隐藏列表与下边框，版权信息始终显示在内容最下面
+        // 没有好友行时隐藏列表，版权信息始终显示在内容最下面
         listContainer.setVisibility(hasRows ? View.VISIBLE : View.GONE);
-        listBottomDivider.setVisibility(hasRows ? View.VISIBLE : View.GONE);
         footerSpacer.setVisibility(hasRows ? View.VISIBLE : View.GONE);
     }
 

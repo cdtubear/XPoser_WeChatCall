@@ -1,12 +1,32 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <!-- 品牌色 -->
     <color name="primary">#07C160</color>
-    <color name="background">#F5F5F5</color>
+    <color name="primary_dark">#059B4C</color>
+    <color name="primary_light">#E8F8EF</color>
+    <color name="primary_disabled">#B7E7CC</color>
+
+    <!-- 背景与卡片 -->
+    <color name="background">#F2F4F5</color>
     <color name="surface">#FFFFFF</color>
-    <color name="text_primary">#333333</color>
-    <color name="text_secondary">#666666</color>
-    <color name="text_disabled">#888888</color>
-    <color name="text_hint">#999999</color>
-    <color name="divider">#EEEEEE</color>
-    <color name="danger">#E64340</color>
+    <color name="surface_alt">#F7F9FA</color>
+    <color name="stroke">#E3E7EA</color>
+    <color name="divider">#E6E9EC</color>
+
+    <!-- 文字 -->
+    <color name="text_primary">#1A1D1F</color>
+    <color name="text_secondary">#5C6670</color>
+    <color name="text_disabled">#9AA3AB</color>
+    <color name="text_hint">#8A9299</color>
+
+    <!-- 状态色 -->
+    <color name="danger">#E5484D</color>
+    <color name="danger_light">#FDECEC</color>
+    <color name="warning">#F5A623</color>
+    <color name="warning_light">#FFF5E6</color>
+    <color name="info">#3B82F6</color>
+    <color name="info_light">#EAF2FE</color>
+
+    <color name="white">#FFFFFF</color>
+    <color name="black">#000000</color>
 </resources>
