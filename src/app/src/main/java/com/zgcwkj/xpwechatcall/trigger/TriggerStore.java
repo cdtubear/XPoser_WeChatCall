@@ -35,7 +35,8 @@ public final class TriggerStore {
      * 创建请求；已存在相同 request_id 时直接返回旧记录
      */
     public static synchronized JSONObject create(Context context, String id, String wxid,
-                                                  String type, int timeoutSec, String callback) {
+                                                  String type, int timeoutSec, String callback,
+                                                  String source) {
         var existing = read(context, id);
         if (existing != null) {
             return existing;
@@ -53,6 +54,7 @@ public final class TriggerStore {
             record.put("timeout_sec", timeoutSec);
             record.put("notified", false);
             record.put("callback", callback == null ? "" : callback);
+            record.put("source", source == null ? "" : source);
             record.put("steps", new JSONArray().put(TriggerContract.S_ACCEPTED));
         } catch (Exception ignored) {
             // 忽略

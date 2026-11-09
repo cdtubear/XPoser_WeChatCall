@@ -328,6 +328,87 @@
                 android:layout_height="wrap_content"
                 android:layout_marginTop="16dp"
                 android:layout_marginBottom="6dp"
+                android:text="蓝牙触发（BLE）"
+                android:textColor="@color/text_secondary"
+                android:textSize="13sp" />
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:background="@color/surface"
+                android:orientation="vertical"
+                android:padding="14dp">
+
+                <Switch
+                    android:id="@+id/sw_bt"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="启用蓝牙触发（手机作为 BLE 外设）"
+                    android:textColor="@color/text_primary"
+                    android:textSize="15sp" />
+
+                <TextView
+                    android:id="@+id/tv_bt_status"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="6dp"
+                    android:fontFamily="monospace"
+                    android:textColor="@color/text_hint"
+                    android:textSize="12sp" />
+
+                <Switch
+                    android:id="@+id/sw_bt_bond"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
+                    android:text="仅允许已配对设备"
+                    android:textColor="@color/text_primary"
+                    android:textSize="15sp" />
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="4dp"
+                    android:text="开启后，未在系统蓝牙设置中配对的设备发送指令会返回 BT_NOT_BONDED。关闭时仍会校验 Token。"
+                    android:textColor="@color/text_hint"
+                    android:textSize="12sp" />
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="8dp"
+                    android:text="协议：Nordic UART Service。设备向 RX 写入 UTF-8 JSON（以换行结尾），手机通过 TX Notify 返回响应与通话终态结果。每条指令必须携带 token。"
+                    android:textColor="@color/text_hint"
+                    android:textSize="12sp" />
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="10dp"
+                    android:orientation="horizontal">
+
+                    <Button
+                        android:id="@+id/btn_bt_uuid"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:text="复制 UUID" />
+
+                    <Button
+                        android:id="@+id/btn_bt_help"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_marginStart="10dp"
+                        android:layout_weight="1"
+                        android:text="协议说明" />
+                </LinearLayout>
+            </LinearLayout>
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="16dp"
+                android:layout_marginBottom="6dp"
                 android:text="结果回调（可选）"
                 android:textColor="@color/text_secondary"
                 android:textSize="13sp" />

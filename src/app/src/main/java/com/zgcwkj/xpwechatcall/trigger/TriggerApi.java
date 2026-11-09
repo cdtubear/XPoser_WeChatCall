@@ -90,10 +90,23 @@ public final class TriggerApi {
      * callback_url 可选，timeout_sec 可选，pick_first 可选。
      */
     public static JSONObject startCall(Context context, JSONObject request) {
+        return startCall(context, request, false);
+    }
+
+    /**
+     * 发起通话
+     *
+     * @param fromBluetooth 蓝牙入口允许在 HTTP 关闭但蓝牙开启时发起
+     */
+    public static JSONObject startCall(Context context, JSONObject request, boolean fromBluetooth) {
         if (request == null) {
             return error(TriggerContract.E_BAD_REQUEST, "json body is required");
         }
-        if (!TriggerContract.isEnabled(context)) {
+        if (fromBluetooth) {
+            if (!TriggerContract.isBtEnabled(context)) {
+                return error(TriggerContract.E_DISABLED, "bluetooth trigger is disabled");
+            }
+        } else if (!TriggerContract.isEnabled(context)) {
             return error(TriggerContract.E_DISABLED, "external trigger is disabled");
         }
         if (!RootShell.isWeChatInstalled(context)) {
@@ -183,7 +196,8 @@ public final class TriggerApi {
         var timeout = request.optInt("timeout_sec", TriggerContract.timeoutSec(context));
         timeout = Math.max(5, Math.min(timeout, 120));
 
-        TriggerStore.create(context, id, wxid, type, timeout, callback);
+        TriggerStore.create(context, id, wxid, type, timeout, callback,
+            fromBluetooth ? BtProtocol.SOURCE_BT : BtProtocol.SOURCE_HTTP);
         LogHelp.i(TAG, "trigger accepted id=" + id + " wxid=" + mask(wxid) + " type=" + type);
 
         final var requestId = id;
@@ -230,9 +244,21 @@ public final class TriggerApi {
             response.put("module_version", "1.0");
             response.put("enabled", TriggerContract.isEnabled(context));
             response.put("service_running", TriggerService.isRunning());
+            response.put("http_enabled", TriggerContract.isEnabled(context));
+            response.put("http_running", TriggerService.isHttpRunning());
             response.put("bind", TriggerContract.bind(context));
             response.put("port", TriggerContract.port(context));
             response.put("token_set", !TriggerContract.token(context).isEmpty());
+            response.put("bt_enabled", TriggerContract.isBtEnabled(context));
+            response.put("bt_require_bond", TriggerContract.btRequireBond(context));
+            response.put("bt_running", TriggerService.isBluetoothRunning());
+            response.put("bt_advertising", TriggerService.isBluetoothAdvertising());
+            response.put("bt_connected", TriggerService.bluetoothConnectedCount());
+            response.put("bt_last_command", TriggerService.bluetoothLastCommand());
+            response.put("bt_last_result", TriggerService.bluetoothLastResult());
+            response.put("bt_service_uuid", BtProtocol.SERVICE_UUID.toString());
+            response.put("bt_rx_uuid", BtProtocol.RX_UUID.toString());
+            response.put("bt_tx_uuid", BtProtocol.TX_UUID.toString());
             response.put("root", RootShell.cachedRootStatus());
             response.put("wechat_installed", RootShell.isWeChatInstalled(context));
             response.put("friends_count", FriendIndex.count(context));
@@ -325,9 +351,14 @@ public final class TriggerApi {
     }
 
     /**
-     * 终态回调：先领取发送权，再交给服务异步发送
+     * 终态回调：先通知本地监听（蓝牙），再领取发送权异步发送 HTTP 回调
      */
     private static void onTerminal(Context context, JSONObject record) {
+        // 本地监听（蓝牙终态）始终通知，与是否配置 HTTP 回调无关
+        var listener = sListener;
+        if (listener != null) {
+            listener.onTerminal(context, record);
+        }
         var id = record.optString("request_id", "");
         var callback = record.optString("callback", "");
         if (callback.isEmpty()) {
@@ -341,13 +372,8 @@ public final class TriggerApi {
         if (claimed == null) {
             return;
         }
-        var listener = sListener;
-        if (listener != null) {
-            listener.onTerminal(context, claimed);
-        } else {
-            // Provider 路径下服务可能未运行，直接在后台线程发送回调
-            new Thread(() -> dispatchCallback(context, claimed), "xp-callback").start();
-        }
+        // 回调是网络请求，必须放到后台线程
+        new Thread(() -> dispatchCallback(context, claimed), "xp-callback").start();
     }
 
     /**

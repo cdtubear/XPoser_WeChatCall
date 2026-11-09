@@ -30,7 +30,7 @@ public class BootReceiver extends BroadcastReceiver {
             && !ACTION_WATCHDOG.equals(action)) {
             return;
         }
-        if (!TriggerContract.isEnabled(context)) {
+        if (!TriggerContract.isEnabled(context) && !TriggerContract.isBtEnabled(context)) {
             return;
         }
         try {
@@ -38,6 +38,14 @@ public class BootReceiver extends BroadcastReceiver {
             LogHelp.i("XpWeChatCall", "trigger service restored: " + action);
         } catch (Throwable e) {
             LogHelp.e("XpWeChatCall", "restore trigger service failed: " + e.getMessage(), e);
+        }
+        if (Intent.ACTION_MY_PACKAGE_REPLACED.equals(action)) {
+            // 看门狗脚本随 App 版本升级，升级后重新写入，避免旧脚本缺少心跳检测
+            new Thread(() -> {
+                if (WatchdogHelper.isScriptPresent(context)) {
+                    WatchdogHelper.install(context);
+                }
+            }, "xp-watchdog-upgrade").start();
         }
     }
 }

@@ -8,6 +8,7 @@ import android.app.PendingIntent;
 import android.app.Service;
 import android.content.Context;
 import android.content.Intent;
+import android.content.pm.ServiceInfo;
 import android.os.Build;
 import android.os.Handler;
 import android.os.IBinder;
@@ -25,6 +26,7 @@ import org.json.JSONObject;
 import java.io.BufferedInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.File;
+import java.io.FileOutputStream;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.InetSocketAddress;
@@ -59,8 +61,12 @@ public class TriggerService extends Service {
     private static final long RESTART_DELAY_MS = 3000L;
     private static final int MAX_HEADER = 8192;
     private static final int MAX_BODY = 64 * 1024;
+    private static final String HEARTBEAT_FILE = "service_heartbeat";
+    private static final long HEARTBEAT_INTERVAL_MS = 30_000L;
 
     private static volatile boolean sRunning;
+    private static volatile boolean sHttpRunning;
+    private static volatile BluetoothTriggerManager sBluetooth;
 
     private final Handler handler = new Handler(Looper.getMainLooper());
     private final Map<String, Deque<Long>> rateBuckets = new ConcurrentHashMap<>();
@@ -69,10 +75,39 @@ public class TriggerService extends Service {
     private ServerSocket serverSocket;
     private Thread acceptThread;
     private ExecutorService requestPool;
-    private ExecutorService callbackPool;
+    private long lastHeartbeat;
 
     public static boolean isRunning() {
         return sRunning;
+    }
+
+    public static boolean isHttpRunning() {
+        return sHttpRunning;
+    }
+
+    public static boolean isBluetoothRunning() {
+        var bluetooth = sBluetooth;
+        return bluetooth != null && bluetooth.isRunning();
+    }
+
+    public static boolean isBluetoothAdvertising() {
+        var bluetooth = sBluetooth;
+        return bluetooth != null && bluetooth.isAdvertising();
+    }
+
+    public static int bluetoothConnectedCount() {
+        var bluetooth = sBluetooth;
+        return bluetooth == null ? 0 : bluetooth.connectedCount();
+    }
+
+    public static String bluetoothLastCommand() {
+        var bluetooth = sBluetooth;
+        return bluetooth == null ? "" : bluetooth.lastCommand();
+    }
+
+    public static String bluetoothLastResult() {
+        var bluetooth = sBluetooth;
+        return bluetooth == null ? "" : bluetooth.lastResult();
     }
 
     public static void start(Context context) {
@@ -90,9 +125,14 @@ public class TriggerService extends Service {
         LogHelp.init(new File(getFilesDir(), "logs"), ConfigHelp.isLogEnabled(this));
         createChannel();
         requestPool = Executors.newFixedThreadPool(4);
-        callbackPool = Executors.newFixedThreadPool(2);
-        TriggerApi.setListener((context, record) ->
-            callbackPool.execute(() -> TriggerApi.dispatchCallback(context, record)));
+        sBluetooth = new BluetoothTriggerManager(this);
+        sBluetooth.setStatusListener(() -> handler.post(this::refreshNotification));
+        TriggerApi.setListener((context, record) -> {
+            var bluetooth = sBluetooth;
+            if (bluetooth != null) {
+                bluetooth.notifyTerminal(record);
+            }
+        });
     }
 
     @Override
@@ -100,19 +140,32 @@ public class TriggerService extends Service {
         if (intent != null && ACTION_STOP.equals(intent.getAction())) {
             // 通知栏「停止」是用户的明确意图：同时关闭开关，避免看门狗又把服务拉起
             TriggerContract.setEnabled(this, false);
+            TriggerContract.setBtEnabled(this, false);
             cancelRestart(this);
             stopSelf();
             return START_NOT_STICKY;
         }
         cancelRestart(this);
-        if (!TriggerContract.isEnabled(this)) {
+        if (!TriggerContract.isEnabled(this) && !TriggerContract.isBtEnabled(this)) {
             stopSelf();
             return START_NOT_STICKY;
         }
-        startForeground(NOTIFICATION_ID, buildNotification("正在启动…"));
-        if (!running) {
-            startServer();
+        startForegroundCompat();
+        sRunning = true;
+        writeHeartbeat();
+        if (TriggerContract.isEnabled(this)) {
+            if (!running) {
+                startServer();
+            }
+        } else {
+            closeServer();
         }
+        if (TriggerContract.isBtEnabled(this)) {
+            startBluetooth();
+        } else {
+            stopBluetooth();
+        }
+        refreshNotification();
         handler.removeCallbacks(sweeper);
         handler.postDelayed(sweeper, 3000);
         return START_STICKY;
@@ -122,14 +175,17 @@ public class TriggerService extends Service {
     public void onDestroy() {
         running = false;
         sRunning = false;
+        sHttpRunning = false;
         handler.removeCallbacks(sweeper);
         TriggerApi.setListener(null);
+        var bluetooth = sBluetooth;
+        if (bluetooth != null) {
+            bluetooth.destroy();
+        }
+        sBluetooth = null;
         closeServer();
         if (requestPool != null) {
             requestPool.shutdownNow();
-        }
-        if (callbackPool != null) {
-            callbackPool.shutdownNow();
         }
         LogHelp.i(TAG, "trigger service stopped");
         super.onDestroy();
@@ -150,7 +206,7 @@ public class TriggerService extends Service {
      * 安排一次服务重启；没有精确闹钟权限时退回非精确闹钟
      */
     private static void scheduleRestart(Context context) {
-        if (!TriggerContract.isEnabled(context)) {
+        if (!TriggerContract.isEnabled(context) && !TriggerContract.isBtEnabled(context)) {
             return;
         }
         try {
@@ -205,9 +261,9 @@ public class TriggerService extends Service {
                 socket.setReuseAddress(true);
                 socket.bind(new InetSocketAddress(host, port));
                 serverSocket = socket;
-                sRunning = true;
+                sHttpRunning = true;
                 var text = "监听 " + host + ":" + port;
-                updateNotification(text);
+                refreshNotification();
                 LogHelp.i(TAG, "trigger http listening on " + text);
                 while (running) {
                     var client = socket.accept();
@@ -215,8 +271,8 @@ public class TriggerService extends Service {
                 }
             } catch (Throwable e) {
                 running = false;
-                sRunning = false;
-                updateNotification("启动失败: " + e.getMessage());
+                sHttpRunning = false;
+                refreshNotification();
                 LogHelp.e(TAG, "trigger http start failed: " + e.getMessage(), e);
             }
         }, "xp-trigger-http");
@@ -232,15 +288,108 @@ public class TriggerService extends Service {
             // 忽略
         }
         serverSocket = null;
+        sHttpRunning = false;
+    }
+
+    /**
+     * Android 14+ 需要显式声明前台服务类型；蓝牙权限缺失时退回 specialUse
+     */
+    private void startForegroundCompat() {
+        var notification = buildNotification(buildStatusText());
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+            startForeground(NOTIFICATION_ID, notification);
+            return;
+        }
+        var type = ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE;
+        if (TriggerContract.isBtEnabled(this)) {
+            type |= ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE;
+        }
+        try {
+            startForeground(NOTIFICATION_ID, notification, type);
+        } catch (Throwable e) {
+            LogHelp.w(TAG, "startForeground with connectedDevice failed: " + e.getMessage());
+            startForeground(NOTIFICATION_ID, notification,
+                ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE);
+        }
+    }
+
+    private void startBluetooth() {
+        var bluetooth = sBluetooth;
+        if (bluetooth == null) {
+            bluetooth = new BluetoothTriggerManager(this);
+            bluetooth.setStatusListener(() -> handler.post(this::refreshNotification));
+            sBluetooth = bluetooth;
+        }
+        if (!bluetooth.isRunning()) {
+            var ok = bluetooth.start();
+            LogHelp.i(TAG, "bluetooth trigger start " + (ok ? "ok" : "failed"));
+        }
+        refreshNotification();
+    }
+
+    private void stopBluetooth() {
+        var bluetooth = sBluetooth;
+        if (bluetooth != null) {
+            bluetooth.stop();
+        }
+        refreshNotification();
+    }
+
+    /**
+     * 写入心跳文件，供 root 看门狗判断服务是否还活着
+     *
+     * 仅蓝牙模式没有 HTTP 端口，看门狗必须依赖这个文件。
+     */
+    private void writeHeartbeat() {
+        lastHeartbeat = System.currentTimeMillis();
+        try (var out = new FileOutputStream(new File(getFilesDir(), HEARTBEAT_FILE))) {
+            out.write(String.valueOf(lastHeartbeat).getBytes(StandardCharsets.UTF_8));
+        } catch (Throwable e) {
+            LogHelp.w(TAG, "write heartbeat failed: " + e.getMessage());
+        }
+    }
+
+    private String buildStatusText() {
+        var text = new StringBuilder();
+        if (TriggerContract.isEnabled(this)) {
+            text.append("HTTP ").append(TriggerContract.port(this))
+                .append(sHttpRunning ? " 监听中" : " 启动中");
+        }
+        if (TriggerContract.isBtEnabled(this)) {
+            if (text.length() > 0) {
+                text.append(" · ");
+            }
+            text.append("BLE ");
+            var bluetooth = sBluetooth;
+            if (bluetooth == null || !bluetooth.isRunning()) {
+                text.append("启动中");
+            } else if (bluetooth.isAdvertising()) {
+                text.append("广播中");
+            } else {
+                text.append("已启动");
+            }
+            var connected = bluetooth == null ? 0 : bluetooth.connectedCount();
+            if (connected > 0) {
+                text.append(" · 已连接 ").append(connected);
+            }
+        }
+        return text.length() == 0 ? "正在启动…" : text.toString();
+    }
+
+    private void refreshNotification() {
+        updateNotification(buildStatusText());
     }
 
     private final Runnable sweeper = new Runnable() {
         @Override
         public void run() {
-            if (!running) {
+            if (!sRunning) {
                 return;
             }
             try {
+                if (System.currentTimeMillis() - lastHeartbeat > HEARTBEAT_INTERVAL_MS) {
+                    writeHeartbeat();
+                }
                 for (var record : TriggerStore.expireAll(TriggerService.this)) {
                     TriggerApi.notifyTerminal(TriggerService.this, record);
                 }
@@ -567,7 +716,7 @@ public class TriggerService extends Service {
         }
         var channel = new NotificationChannel(CHANNEL, "外部触发服务",
             NotificationManager.IMPORTANCE_LOW);
-        channel.setDescription("保持 webhook 触发接口运行");
+        channel.setDescription("保持 webhook 与蓝牙触发接口运行");
         channel.setShowBadge(false);
         manager.createNotificationChannel(channel);
     }

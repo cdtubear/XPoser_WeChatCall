@@ -83,9 +83,21 @@ paths:
                     module_version: '1.0'
                     enabled: true
                     service_running: true
+                    http_enabled: true
+                    http_running: true
                     bind: 0.0.0.0
                     port: 8790
                     token_set: true
+                    bt_enabled: false
+                    bt_require_bond: true
+                    bt_running: false
+                    bt_advertising: false
+                    bt_connected: 0
+                    bt_last_command: ''
+                    bt_last_result: ''
+                    bt_service_uuid: 6e400001-b5a3-f393-e0a9-e50e24dcca9e
+                    bt_rx_uuid: 6e400002-b5a3-f393-e0a9-e50e24dcca9e
+                    bt_tx_uuid: 6e400003-b5a3-f393-e0a9-e50e24dcca9e
                     root: granted
                     wechat_installed: true
                     friends_count: 128
@@ -779,6 +791,8 @@ components:
             - DEVICE_LOCKED
             - CHAT_OPEN_FAILED
             - CALL_BUTTON_NOT_FOUND
+            - BT_NOT_BONDED
+            - BT_UNAVAILABLE
             - TIMEOUT
             - INTERNAL
         detail:
@@ -813,15 +827,54 @@ components:
           type: string
         enabled:
           type: boolean
-          description: 设置页中是否已启用外部触发
+          description: 设置页中是否已启用 HTTP 外部触发
         service_running:
           type: boolean
+          description: 触发服务（HTTP 或 BLE 任一开启）是否在运行
+        http_enabled:
+          type: boolean
+          description: HTTP 外部触发开关
+        http_running:
+          type: boolean
+          description: HTTP 端口是否正在监听
         bind:
           type: string
         port:
           type: integer
         token_set:
           type: boolean
+        bt_enabled:
+          type: boolean
+          description: 蓝牙触发开关
+        bt_require_bond:
+          type: boolean
+          description: 是否仅允许系统蓝牙中已配对的设备发送指令
+        bt_running:
+          type: boolean
+          description: BLE GATT Server 是否已启动
+        bt_advertising:
+          type: boolean
+          description: BLE 是否正在广播
+        bt_connected:
+          type: integer
+          description: 当前已连接的 BLE 设备数量
+        bt_last_command:
+          type: string
+          description: 最近一条蓝牙指令，例如 `call ...`
+        bt_last_result:
+          type: string
+          description: 最近一条蓝牙终态结果，例如 `<request_id> SUCCESS`
+        bt_service_uuid:
+          type: string
+          format: uuid
+        bt_rx_uuid:
+          type: string
+          format: uuid
+          description: 设备写入指令的特征
+        bt_tx_uuid:
+          type: string
+          format: uuid
+          description: 设备订阅 Notify 的特征
         root:
           type: string
           enum: [ granted, denied, unknown ]
@@ -888,6 +941,8 @@ components:
             - DEVICE_LOCKED
             - CHAT_OPEN_FAILED
             - CALL_BUTTON_NOT_FOUND
+            - BT_NOT_BONDED
+            - BT_UNAVAILABLE
             - TIMEOUT
             - INTERNAL
         message:

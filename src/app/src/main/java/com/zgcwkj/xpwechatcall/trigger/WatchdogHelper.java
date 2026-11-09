@@ -28,7 +28,7 @@ public final class WatchdogHelper {
     public static final String SCRIPT_PATH = SERVICE_DIR + "/xp_wechatcall_watchdog.sh";
     private static final String PID_PATH = "/data/local/tmp/xp_wechatcall_watchdog.pid";
     private static final String LOG_PATH = "/data/local/tmp/xp_wechatcall_watchdog.log";
-    private static final String SCRIPT_MARKER = "XpWeChatCall root watchdog v2";
+    private static final String SCRIPT_MARKER = "XpWeChatCall root watchdog v3";
 
     private WatchdogHelper() {
     }
@@ -43,6 +43,18 @@ public final class WatchdogHelper {
         var result = RootShell.runAsRoot(
             "if [ -d /data/adb ]; then echo xp_supported; fi");
         return result.ok && result.output.contains("xp_supported");
+    }
+
+    /**
+     * 看门狗脚本文件是否存在（不校验版本，用于 App 升级后自动重写）
+     */
+    public static boolean isScriptPresent(Context context) {
+        if (!RootShell.hasRoot(context)) {
+            return false;
+        }
+        var result = RootShell.runAsRoot(
+            "if [ -f '" + SCRIPT_PATH + "' ]; then echo xp_present; fi");
+        return result.ok && result.output.contains("xp_present");
     }
 
     /**
@@ -131,6 +143,7 @@ public final class WatchdogHelper {
             + "ACTION=\"$PKG.action.TRIGGER_START\"\n"
             + "WAKE_ACTION=\"$PKG.action.WATCHDOG_START\"\n"
             + "PREFS=\"/data/data/$PKG/shared_prefs/trigger_config.xml\"\n"
+            + "HEARTBEAT=\"/data/data/$PKG/files/service_heartbeat\"\n"
             + "PID_FILE='" + PID_PATH + "'\n"
             + "LOG='" + LOG_PATH + "'\n"
             + "echo $$ > \"$PID_FILE\"\n"
@@ -140,11 +153,28 @@ public final class WatchdogHelper {
             + "    [ -d \"/data/data/$PKG\" ] || exit 0\n"
             + "    continue\n"
             + "  fi\n"
-            + "  if grep -q 'name=\"enabled\" value=\"true\"' \"$PREFS\" 2>/dev/null; then\n"
-            + "    PORT=$(sed -n 's/.*name=\"port\" value=\"\\([0-9][0-9]*\\)\".*/\\1/p' \"$PREFS\" 2>/dev/null | head -n 1)\n"
-            + "    [ -n \"$PORT\" ] || PORT=8790\n"
-            + "    HEX=$(printf '%04X' \"$PORT\" 2>/dev/null)\n"
-            + "    if [ -z \"$HEX\" ] || ! grep -qi \":$HEX \" /proc/net/tcp /proc/net/tcp6 2>/dev/null; then\n"
+            + "  ENABLED=0\n"
+            + "  BT=0\n"
+            + "  grep -q 'name=\"enabled\" value=\"true\"' \"$PREFS\" 2>/dev/null && ENABLED=1\n"
+            + "  grep -q 'name=\"bt_enabled\" value=\"true\"' \"$PREFS\" 2>/dev/null && BT=1\n"
+            + "  if [ \"$ENABLED\" = \"1\" ] || [ \"$BT\" = \"1\" ]; then\n"
+            + "    NOW=$(date +%s)\n"
+            + "    MTIME=$(stat -c %Y \"$HEARTBEAT\" 2>/dev/null)\n"
+            + "    [ -n \"$MTIME\" ] || MTIME=0\n"
+            + "    ALIVE=0\n"
+            + "    if [ \"$MTIME\" -gt 0 ] && [ $((NOW - MTIME)) -le 90 ]; then\n"
+            + "      ALIVE=1\n"
+            + "    fi\n"
+            + "    # 旧版本没有心跳文件时，HTTP 端口仍在监听也视为存活\n"
+            + "    if [ \"$ALIVE\" = \"0\" ] && [ \"$ENABLED\" = \"1\" ]; then\n"
+            + "      PORT=$(sed -n 's/.*name=\"port\" value=\"\\([0-9][0-9]*\\)\".*/\\1/p' \"$PREFS\" 2>/dev/null | head -n 1)\n"
+            + "      [ -n \"$PORT\" ] || PORT=8790\n"
+            + "      HEX=$(printf '%04X' \"$PORT\" 2>/dev/null)\n"
+            + "      if [ -n \"$HEX\" ] && grep -qi \":$HEX \" /proc/net/tcp /proc/net/tcp6 2>/dev/null; then\n"
+            + "        ALIVE=1\n"
+            + "      fi\n"
+            + "    fi\n"
+            + "    if [ \"$ALIVE\" = \"0\" ]; then\n"
             + "      # 先广播唤醒 App（BootReceiver 是 exported，且不会暴露 TriggerService），\n"
             + "      # 再用 root 直接拉起作为兜底。两种方式重复触发也不会重复监听端口。\n"
             + "      am broadcast -n \"$RECEIVER\" -a \"$WAKE_ACTION\" -f 0x00000020 >/dev/null 2>&1\n"

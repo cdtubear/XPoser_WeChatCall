@@ -36,7 +36,8 @@ Hook 边界选择稳定且可被外部拉起的 `com.tencent.mm.ui.LauncherUI`�
 - 点击桌面图标即对好友发起视频通话或语音通话
 - **支持桌面控件（1×1 / 2×2 / 4×4），绑定好友后点击直接通话**
 - **支持外部触发：模块内置 HTTP 服务，webhook 可按昵称或 wxid 发起通话并查询结果**
-- **支持 root 看门狗保活：App 进程被杀后自动恢复 webhook 服务**
+- **支持蓝牙触发：手机作为 BLE 外设，外部设备写入 JSON 指令发起通话并接收结果**
+- **支持 root 看门狗保活：App 进程被杀后自动恢复 webhook / 蓝牙服务**
 - **支持 root 锁屏唤醒 + 自动解锁（仅滑动锁）**
 - 支持快捷方式固定（`ShortcutManager`）与旧版广播两种创建方式
 - 支持写入运行日志，便于排查
@@ -238,6 +239,60 @@ String json = result.getString("result");
 
 方法名：`resolve_friend`、`list_friends`、`start_call`、`query_result`、`health`。`list_friends` 的 `arg` 支持 `{"offset":0,"limit":50,"keyword":"张三"}`，字段含义与 `/v1/friends` 一致。桌面快捷方式不受该接口影响，也不需要 Token。
 
+## 蓝牙触发（BLE）
+
+除了 HTTP，模块还可以把手机当作 **BLE 外设（GATT Server）**。外部设备（ESP32、nRF52、Arduino、nRF Connect 等）连接后向 RX 特征写入 JSON 指令，即可发起通话，并通过 TX 特征 Notify 收到即时响应和最终结果。
+
+蓝牙默认关闭，与 HTTP 相互独立：
+
+- 只开 HTTP：行为与旧版本一致
+- 只开蓝牙：服务仍会运行，但不监听 HTTP 端口
+- 两者都开：共用同一个前台服务、同一套 Token、好友匹配、忙状态和结果存储
+
+### 启用步骤
+
+1. 打开 **⚙ → 外部触发**
+2. 在「蓝牙触发（BLE）」区域打开 **启用蓝牙触发**
+3. Android 12+ 授予「附近的设备」权限（`BLUETOOTH_CONNECT` / `BLUETOOTH_ADVERTISE`）
+4. 打开系统蓝牙；需要时在系统蓝牙设置中与设备配对
+5. 建议保留「仅允许已配对设备」开启
+
+### BLE 参数
+
+| 项目 | 值 |
+| --- | --- |
+| Service UUID | `6e400001-b5a3-f393-e0a9-e50e24dcca9e` |
+| RX UUID（设备写入） | `6e400002-b5a3-f393-e0a9-e50e24dcca9e` |
+| TX UUID（设备订阅 Notify） | `6e400003-b5a3-f393-e0a9-e50e24dcca9e` |
+| 帧格式 | UTF-8 JSON，推荐以 `\n` 结尾，单条上限 1024 字节 |
+| 鉴权 | 每条指令必须包含 `token` |
+
+连接后必须先订阅 TX 的 Notify，否则收不到响应。
+
+### 指令示例
+
+```json
+{"token":"<TOKEN>","action":"call","name":"张三","type":"video"}
+```
+
+支持的 `action`：`call`、`query`、`health`、`friends`、`resolve`、`ping`、`help`。
+
+即时响应与 HTTP 接口结构一致：
+
+```json
+{"ok":true,"request_id":"bt_1762300000000_1a2b3c","state":"ACCEPTED","wxid":"wxid_abc123","type":"video"}
+```
+
+通话进入终态后会额外推送：
+
+```json
+{"event":"result","ok":true,"data":{"request_id":"bt_1762300000000_1a2b3c","state":"SUCCESS"}}
+```
+
+响应超过 MTU 时会自动分片，格式为 `@序号/总数:内容`，设备端按序号拼接即可。大响应建议在设备端协商 MTU 247。
+
+完整协议、nRF Connect 步骤、ESP32 示例和排错说明见 [`docs/bluetooth.md`](docs/bluetooth.md)。
+
 ## 项目结构
 
 ```text
@@ -264,8 +319,11 @@ app/src/main/java/com/zgcwkj/
     trigger/
       TriggerApi.java     外部触发核心：解析好友、发起、查询、回调
       TriggerProvider.java 外部触发 ContentProvider
-      TriggerService.java 外部触发 HTTP 前台服务
+      TriggerService.java 外部触发前台服务：HTTP 监听 + BLE 生命周期、心跳
       TriggerStore.java   请求状态持久化、幂等、超时
+      BtProtocol.java     蓝牙协议：UUID、动作、Token 校验、JSON 工具
+      BtCommandHandler.java 蓝牙指令分发到 TriggerApi
+      BluetoothTriggerManager.java BLE GATT Server：广播、连接、分片、终态 Notify
       RootShell.java      root 拉起微信、唤醒解锁、执行 root 命令
       WatchdogHelper.java root 看门狗脚本安装、卸载、状态检测
       KeepAliveHelper.java 电池白名单、MIUI / HyperOS 自启动入口
@@ -294,11 +352,14 @@ app/src/main/res/
 | `ContactHook` | 捕获 WCDB 主库连接，从 `rcontact` 表读取并过滤好友列表 |
 | `UiCallHelper` | 打开好友聊天页，按界面文案模拟点击「+」与通话按钮 |
 | `CallWidgetProvider` | 桌面控件，显示好友头像与名字，点击直接发起通话 |
-| `TriggerService` | 外部触发 HTTP 服务，Token 鉴权、限流、超时扫描 |
-| `TriggerApi` | 外部触发核心逻辑，HTTP 与 Provider 共用；含好友查询与列表接口 |
+| `TriggerService` | 外部触发前台服务：HTTP 监听、BLE 生命周期、Token 鉴权、限流、超时扫描、心跳 |
+| `TriggerApi` | 外部触发核心逻辑，HTTP / Provider / 蓝牙共用；含好友查询与列表接口 |
 | `TriggerStore` | 请求状态持久化、幂等、忙状态、结果回调领取 |
+| `BluetoothTriggerManager` | BLE GATT Server：广播、连接、MTU、写入缓冲、UTF-8 分片与终态 Notify |
+| `BtProtocol` | 蓝牙协议常量、UUID、Token 常量时间比较与 JSON 响应构造 |
+| `BtCommandHandler` | 把蓝牙指令分发到 `TriggerApi`，与 HTTP / Provider 行为一致 |
 | `RootShell` | root 命令封装：唤醒解锁、后台拉起微信、执行内部 root 命令 |
-| `WatchdogHelper` | 写入 `/data/adb/service.d` 看门狗脚本，每 30 秒检查端口并拉起服务 |
+| `WatchdogHelper` | 写入 `/data/adb/service.d` 看门狗脚本，每 30 秒检查心跳 / 端口并拉起服务 |
 | `KeepAliveHelper` | 电池优化白名单、MIUI / HyperOS 自启动设置入口 |
 | `BootReceiver` | 开机完成和 App 升级后恢复外部触发服务 |
 
@@ -311,6 +372,9 @@ app/src/main/res/
 - 按昵称匹配基于本地已导入的好友数据，好友变动后需重新导入
 - 微信界面文案或「+」按钮描述变化时，模拟点击可能失败并返回 `CALL_BUTTON_NOT_FOUND`
 - `SUCCESS` 仅代表本机已发起通话，不保证对方接听
+- 蓝牙触发需要系统蓝牙已打开；Android 12+ 还需要「附近的设备」权限
+- BLE 链路上的 Token 为明文 JSON，建议保持「仅允许已配对设备」开启并定期重置 Token
+- 响应分片数量取决于 MTU，设备端协商 247 可以显著减少分片
 
 ## 保活 / 后台运行
 
@@ -320,7 +384,7 @@ app/src/main/res/
 
 | 层级 | 机制 | 能扛住什么 | 开启方式 |
 | --- | --- | --- | --- |
-| root 看门狗 | `/data/adb/service.d` 下的开机脚本，每 30 秒检查端口，失联就广播唤醒 App 并拉起服务 | 划掉 App、系统回收、OEM 清理、重启手机 | 设置页「启用 root 看门狗」 |
+| root 看门狗 | `/data/adb/service.d` 下的开机脚本，每 30 秒检查心跳文件（HTTP 模式同时检查端口），失联就广播唤醒 App 并拉起服务 | 划掉 App、系统回收、OEM 清理、重启手机 | 设置页「启用 root 看门狗」 |
 | 服务生命周期 | `START_STICKY` + `onTaskRemoved` 闹钟 + 开机 / 升级广播 | 系统内存回收、划掉任务、App 升级 | 默认启用 |
 | 系统白名单 | Doze 电池白名单、自启动、省电策略无限制 | Doze 断网、后台被杀 | 设置页「电池白名单」「自启动设置」 |
 
@@ -387,6 +451,7 @@ curl -H "Authorization: Bearer <TOKEN>" http://手机IP:8790/v1/health
 | 看门狗 PID | `/data/local/tmp/xp_wechatcall_watchdog.pid` |
 | 看门狗重启日志 | `/data/local/tmp/xp_wechatcall_watchdog.log` |
 | 模块日志 | App 私有目录 `logs/`，也可用 `adb logcat -s XpWeChatCall` |
+| 服务心跳 | `/data/data/com.zgcwkj.xpwechatcall/files/service_heartbeat` |
 
 查看看门狗日志：
 
@@ -401,12 +466,12 @@ adb shell su -c "cat /data/local/tmp/xp_wechatcall_watchdog.pid"
 adb shell su -c "ps -A | grep xp_wechatcall_watchdog"
 ```
 
-端口检查依赖 `/proc/net/tcp` 和 `/proc/net/tcp6`，脚本会把端口转成十六进制匹配（8790 → `2256`）。如果系统隐藏了 `/proc/net/tcp`，看门狗会一直认为端口不在并重复拉起服务，此时可先关闭看门狗，改用系统白名单方案。
+看门狗 v3 通过 App 私有目录下的 `files/service_heartbeat` 心跳文件判断服务是否存活，因此只开蓝牙、没有 HTTP 端口时也能正确保活。HTTP 模式下还会额外检查端口：脚本把端口转成十六进制匹配 `/proc/net/tcp` 和 `/proc/net/tcp6`（8790 → `2256`）。如果系统隐藏了 `/proc/net/tcp` 且心跳文件也无法读取，看门狗会一直认为服务不在并重复拉起服务，此时可先关闭看门狗，改用系统白名单方案。
 
 ### 注意事项
 
 - **卸载 App 前先在设置页关闭「root 看门狗」**，否则脚本会留在 `/data/adb/service.d`，开机后不断尝试拉起已卸载的包
-- 关闭通知栏服务（点「停止」）会同时把外部触发开关设为关闭，避免看门狗反复拉起
+- 关闭通知栏服务（点「停止」）会同时把 HTTP 和蓝牙开关设为关闭，避免看门狗反复拉起
 - 开启看门狗时会顺带加入电池白名单；Android 12+ 在未加入白名单时会阻止后台启动前台服务
 - 看门狗通过显式广播唤醒 `BootReceiver`，再拉起服务；`TriggerService` 保持 `exported=false`，外部 App 无法直接启动或停止它
 - 看门狗只负责让端口恢复监听，不负责解锁手机；通话仍需要 root 解锁或保持屏幕常亮
