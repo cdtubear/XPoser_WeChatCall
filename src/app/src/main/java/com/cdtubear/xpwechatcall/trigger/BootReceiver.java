@@ -1,4 +1,4 @@
-package com.zgcwkj.xpwechatcall.trigger;
+package com.cdtubear.xpwechatcall.trigger;
 
 import android.content.BroadcastReceiver;
 import android.content.Context;
@@ -17,7 +17,7 @@ import com.zgcwkj.comm.TriggerContract;
 public class BootReceiver extends BroadcastReceiver {
 
     /** root 看门狗使用的唤醒 action */
-    public static final String ACTION_WATCHDOG = "com.zgcwkj.xpwechatcall.action.WATCHDOG_START";
+    public static final String ACTION_WATCHDOG = "com.cdtubear.xpwechatcall.action.WATCHDOG_START";
 
     @Override
     public void onReceive(Context context, Intent intent) {

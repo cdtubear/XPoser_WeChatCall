@@ -1,6 +1,6 @@
-package com.zgcwkj.xpwechatcall.widget;
+package com.cdtubear.xpwechatcall.widget;
 
-import com.zgcwkj.xpwechatcall.R;
+import com.cdtubear.xpwechatcall.R;
 
 /**
  * 1x1 尺寸控件

@@ -1,4 +1,4 @@
-package com.zgcwkj.xpwechatcall.trigger;
+package com.cdtubear.xpwechatcall.trigger;
 
 import android.app.Activity;
 import android.content.ComponentName;

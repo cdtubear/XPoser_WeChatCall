@@ -1,7 +1,7 @@
-package com.zgcwkj.xpwechatcall;
+package com.cdtubear.xpwechatcall;
 
-import com.zgcwkj.xpwechatcall.hook.ContactHook;
-import com.zgcwkj.xpwechatcall.hook.WeChatHook;
+import com.cdtubear.xpwechatcall.hook.ContactHook;
+import com.cdtubear.xpwechatcall.hook.WeChatHook;
 
 import de.robv.android.xposed.IXposedHookLoadPackage;
 import de.robv.android.xposed.XposedBridge;

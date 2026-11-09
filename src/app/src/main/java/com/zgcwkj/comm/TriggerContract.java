@@ -17,7 +17,7 @@ import java.util.Locale;
 public final class TriggerContract {
 
     /** ContentProvider 授权标识，与 AndroidManifest 保持一致 */
-    public static final String AUTHORITY = "com.zgcwkj.xpwechatcall.trigger";
+    public static final String AUTHORITY = "com.cdtubear.xpwechatcall.trigger";
     public static final Uri CONTENT_URI = Uri.parse("content://" + AUTHORITY);
 
     /** 对外方法名 */

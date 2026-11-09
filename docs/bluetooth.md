@@ -342,7 +342,7 @@ adb logcat -s XpWeChatCall
 心跳文件：
 
 ```text
-/data/data/com.zgcwkj.xpwechatcall/files/service_heartbeat
+/data/data/com.cdtubear.xpwechatcall/files/service_heartbeat
 ```
 
 ## 与 HTTP 接口的关系

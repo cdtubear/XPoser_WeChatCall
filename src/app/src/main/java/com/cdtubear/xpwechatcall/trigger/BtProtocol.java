@@ -1,4 +1,4 @@
-package com.zgcwkj.xpwechatcall.trigger;
+package com.cdtubear.xpwechatcall.trigger;
 
 import android.annotation.SuppressLint;
 import android.bluetooth.BluetoothDevice;

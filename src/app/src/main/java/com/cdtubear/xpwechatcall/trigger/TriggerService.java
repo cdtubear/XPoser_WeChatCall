@@ -1,4 +1,4 @@
-package com.zgcwkj.xpwechatcall.trigger;
+package com.cdtubear.xpwechatcall.trigger;
 
 import android.app.AlarmManager;
 import android.app.Notification;
@@ -18,8 +18,8 @@ import android.graphics.drawable.Icon;
 import com.zgcwkj.comm.ConfigHelp;
 import com.zgcwkj.comm.LogHelp;
 import com.zgcwkj.comm.TriggerContract;
-import com.zgcwkj.xpwechatcall.R;
-import com.zgcwkj.xpwechatcall.TriggerSettingsActivity;
+import com.cdtubear.xpwechatcall.R;
+import com.cdtubear.xpwechatcall.TriggerSettingsActivity;
 
 import org.json.JSONObject;
 
@@ -51,8 +51,8 @@ import java.util.concurrent.Executors;
  */
 public class TriggerService extends Service {
 
-    public static final String ACTION_START = "com.zgcwkj.xpwechatcall.action.TRIGGER_START";
-    public static final String ACTION_STOP = "com.zgcwkj.xpwechatcall.action.TRIGGER_STOP";
+    public static final String ACTION_START = "com.cdtubear.xpwechatcall.action.TRIGGER_START";
+    public static final String ACTION_STOP = "com.cdtubear.xpwechatcall.action.TRIGGER_STOP";
 
     private static final String TAG = "XpWeChatCall";
     private static final String CHANNEL = "trigger_service";

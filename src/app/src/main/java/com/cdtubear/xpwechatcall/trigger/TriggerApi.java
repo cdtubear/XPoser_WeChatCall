@@ -1,4 +1,4 @@
-package com.zgcwkj.xpwechatcall.trigger;
+package com.cdtubear.xpwechatcall.trigger;
 
 import android.content.Context;
 import android.net.Uri;
@@ -241,7 +241,7 @@ public final class TriggerApi {
     public static JSONObject health(Context context) {
         var response = ok();
         try {
-            response.put("module_version", "1.0");
+            response.put("module_version", "1.1");
             response.put("enabled", TriggerContract.isEnabled(context));
             response.put("service_running", TriggerService.isRunning());
             response.put("http_enabled", TriggerContract.isEnabled(context));

@@ -7,16 +7,16 @@ def releaseKeystoreFile = System.getenv('XP_KEYSTORE_FILE')
 def hasReleaseKeystore = releaseKeystoreFile != null && !releaseKeystoreFile.trim().isEmpty() && file(releaseKeystoreFile).exists()
 
 android {
-    namespace 'com.zgcwkj.xpwechatcall'
+    namespace 'com.cdtubear.xpwechatcall'
     compileSdk 36
     buildToolsVersion "36.0.0"
 
     defaultConfig {
-        applicationId "com.zgcwkj.xpwechatcall"
+        applicationId "com.cdtubear.xpwechatcall"
         minSdk 30
         targetSdk 36
-        versionCode 261005
-        versionName "1.0"
+        versionCode 261006
+        versionName "1.1"
     }
 
     signingConfigs {

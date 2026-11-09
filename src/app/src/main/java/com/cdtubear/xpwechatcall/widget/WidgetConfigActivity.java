@@ -1,4 +1,4 @@
-package com.zgcwkj.xpwechatcall.widget;
+package com.cdtubear.xpwechatcall.widget;
 
 import android.app.Activity;
 import android.appwidget.AppWidgetManager;
@@ -18,7 +18,7 @@ import com.zgcwkj.comm.ConfigHelp;
 import com.zgcwkj.comm.Friend;
 import com.zgcwkj.comm.FriendSync;
 import com.zgcwkj.comm.ShortcutHelp;
-import com.zgcwkj.xpwechatcall.R;
+import com.cdtubear.xpwechatcall.R;
 
 import java.util.ArrayList;
 import java.util.List;

@@ -60,6 +60,6 @@
     <string name="shortcut_type_video">视频通话</string>
     <string name="shortcut_type_voice">语音通话</string>
 
-    <string name="author_url">http://www.zgcwkj.cn</string>
-    <string name="footer_text">Powered by <a href="http://www.zgcwkj.cn">zgcwkj</a></string>
+    <string name="author_url">https://github.com/cdtubear/XPoser_WeChatCall</string>
+    <string name="footer_text">Powered by <a href="https://github.com/cdtubear/XPoser_WeChatCall">cdtubear</a>\n鸣谢 <a href="http://www.zgcwkj.cn">zgcwkj</a>（已获得 zgcwkj 本人授权并开源）</string>
 </resources>

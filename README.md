@@ -232,7 +232,7 @@ Token 鉴权同样适用，可选配置调用方包名白名单：
 Bundle extras = new Bundle();
 extras.putString("auth", "<TOKEN>");
 Bundle result = getContentResolver().call(
-    Uri.parse("content://com.zgcwkj.xpwechatcall.trigger"),
+    Uri.parse("content://com.cdtubear.xpwechatcall.trigger"),
     "start_call", "{\"name\":\"张三\",\"type\":\"video\"}", extras);
 String json = result.getString("result");
 ```
@@ -296,8 +296,8 @@ String json = result.getString("result");
 ## 项目结构
 
 ```text
-app/src/main/java/com/zgcwkj/
-  comm/
+app/src/main/java/com/
+  zgcwkj/comm/
     ConfigHelp.java       配置读写（应用私有目录 config.json）
     LogHelp.java          日志输出（logcat + 可选文件）
     Friend.java           好友数据模型
@@ -306,7 +306,7 @@ app/src/main/java/com/zgcwkj/
     TriggerContract.java  外部触发契约：方法名、状态、错误码、Token、配置
     FriendIndex.java      本地好友索引：按昵称 / 备注查 wxid、分页获取好友列表
     CallReporter.java     微信进程向模块回传通话步骤结果
-  xpwechatcall/
+  cdtubear/xpwechatcall/
     XposedEntry.java      Xposed 入口
     MainActivity.java     好友列表管理界面
     FriendAdapter.java    好友列表适配器
@@ -438,7 +438,7 @@ curl -H "Authorization: Bearer <TOKEN>" http://手机IP:8790/v1/health
 
 1. 按 Home 键让 App 进入后台
 2. 从最近任务划掉 App
-3. 用 `adb shell am kill com.zgcwkj.xpwechatcall` 杀掉进程（模拟低内存回收）
+3. 用 `adb shell am kill com.cdtubear.xpwechatcall` 杀掉进程（模拟低内存回收）
 4. 重启手机
 
 只要看门狗在运行，端口会在一分钟内恢复。注意：在系统设置里点「强行停止」会把整个包标记为 stopped，Linux 层面仍可能被看门狗拉起，但部分 ROM 会阻止，遇到这种情况需要手动再打开一次 App。
@@ -451,7 +451,7 @@ curl -H "Authorization: Bearer <TOKEN>" http://手机IP:8790/v1/health
 | 看门狗 PID | `/data/local/tmp/xp_wechatcall_watchdog.pid` |
 | 看门狗重启日志 | `/data/local/tmp/xp_wechatcall_watchdog.log` |
 | 模块日志 | App 私有目录 `logs/`，也可用 `adb logcat -s XpWeChatCall` |
-| 服务心跳 | `/data/data/com.zgcwkj.xpwechatcall/files/service_heartbeat` |
+| 服务心跳 | `/data/data/com.cdtubear.xpwechatcall/files/service_heartbeat` |
 
 查看看门狗日志：
 
@@ -489,7 +489,7 @@ adb shell su -c "ps -A | grep xp_wechatcall_watchdog"
 
 - `type` 位标志按微信 8.0.77 实测得出，换版本可能需要重新确认
 - 界面文案匹配同时意味着微信语言须为中文
-- 排查时开启日志查看 `/data/data/com.zgcwkj.xpwechatcall/files/logs/` 中的运行记录
+- 排查时开启日志查看 `/data/data/com.cdtubear.xpwechatcall/files/logs/` 中的运行记录
 
 ## 编译
 

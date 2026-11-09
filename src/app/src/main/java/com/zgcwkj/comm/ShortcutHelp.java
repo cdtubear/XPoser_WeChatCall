@@ -78,7 +78,7 @@ public class ShortcutHelp {
      */
     private static Intent buildTarget(Context context, Friend friend) {
         var intent = new Intent();
-        intent.setClassName(context.getPackageName(), "com.zgcwkj.xpwechatcall.ShortcutActivity");
+        intent.setClassName(context.getPackageName(), "com.cdtubear.xpwechatcall.ShortcutActivity");
         intent.setAction(Intent.ACTION_VIEW);
         intent.putExtra(EXTRA_WXID, friend.wxid);
         intent.putExtra(EXTRA_NICKNAME, friend.nickname);

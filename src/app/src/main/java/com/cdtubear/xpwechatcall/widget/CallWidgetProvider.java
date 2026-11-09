@@ -1,4 +1,4 @@
-package com.zgcwkj.xpwechatcall.widget;
+package com.cdtubear.xpwechatcall.widget;
 
 import android.app.PendingIntent;
 import android.appwidget.AppWidgetManager;
@@ -11,7 +11,7 @@ import com.zgcwkj.comm.ConfigHelp;
 import com.zgcwkj.comm.Friend;
 import com.zgcwkj.comm.FriendSync;
 import com.zgcwkj.comm.ShortcutHelp;
-import com.zgcwkj.xpwechatcall.R;
+import com.cdtubear.xpwechatcall.R;
 
 /**
  * 好友通话桌面控件
@@ -124,7 +124,7 @@ public class CallWidgetProvider extends AppWidgetProvider {
     private static PendingIntent buildClickIntent(Context context, String wxid, String name,
                                                   String callType, int widgetId) {
         var intent = new Intent();
-        intent.setClassName(context.getPackageName(), "com.zgcwkj.xpwechatcall.ShortcutActivity");
+        intent.setClassName(context.getPackageName(), "com.cdtubear.xpwechatcall.ShortcutActivity");
         intent.setAction(Intent.ACTION_VIEW);
         intent.putExtra(ShortcutHelp.EXTRA_WXID, wxid);
         intent.putExtra(ShortcutHelp.EXTRA_NICKNAME, name);

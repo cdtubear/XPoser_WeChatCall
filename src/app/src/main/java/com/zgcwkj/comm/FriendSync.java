@@ -20,7 +20,7 @@ import java.nio.charset.StandardCharsets;
 public class FriendSync {
 
     /** ContentProvider 授权标识，与 AndroidManifest 保持一致 */
-    public static final String AUTHORITY = "com.zgcwkj.xpwechatcall.friends";
+    public static final String AUTHORITY = "com.cdtubear.xpwechatcall.friends";
     public static final Uri CONTENT_URI = Uri.parse("content://" + AUTHORITY);
     /** 回传好友数据的方法名 */
     public static final String METHOD_PUSH = "push_friends";

@@ -1,4 +1,4 @@
-package com.zgcwkj.xpwechatcall;
+package com.cdtubear.xpwechatcall;
 
 import android.app.Activity;
 import android.app.AlertDialog;
@@ -24,7 +24,7 @@ import com.zgcwkj.comm.Friend;
 import com.zgcwkj.comm.FriendSync;
 import com.zgcwkj.comm.LogHelp;
 import com.zgcwkj.comm.ShortcutHelp;
-import com.zgcwkj.xpwechatcall.widget.CallWidgetProvider;
+import com.cdtubear.xpwechatcall.widget.CallWidgetProvider;
 
 import org.json.JSONArray;
 import org.json.JSONObject;
@@ -163,7 +163,7 @@ public class MainActivity extends Activity {
                 confirmDelete(friend);
             }
         };
-        // 底部版权信息：点击跳转作者主页
+        // 底部版权信息：点击空白区域跳转项目主页，文字内的链接由 LinkMovementMethod 处理
         findViewById(R.id.tv_footer).setOnClickListener(v -> startActivity(new Intent(
             Intent.ACTION_VIEW, Uri.parse(getString(R.string.author_url)))));
 

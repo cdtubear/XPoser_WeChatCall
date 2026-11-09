@@ -1,4 +1,4 @@
-package com.zgcwkj.xpwechatcall;
+package com.cdtubear.xpwechatcall;
 
 import android.Manifest;
 import android.app.Activity;
@@ -20,12 +20,12 @@ import android.widget.Toast;
 import com.zgcwkj.comm.ConfigHelp;
 import com.zgcwkj.comm.LogHelp;
 import com.zgcwkj.comm.TriggerContract;
-import com.zgcwkj.xpwechatcall.trigger.BtProtocol;
-import com.zgcwkj.xpwechatcall.trigger.KeepAliveHelper;
-import com.zgcwkj.xpwechatcall.trigger.RootShell;
-import com.zgcwkj.xpwechatcall.trigger.TriggerApi;
-import com.zgcwkj.xpwechatcall.trigger.TriggerService;
-import com.zgcwkj.xpwechatcall.trigger.WatchdogHelper;
+import com.cdtubear.xpwechatcall.trigger.BtProtocol;
+import com.cdtubear.xpwechatcall.trigger.KeepAliveHelper;
+import com.cdtubear.xpwechatcall.trigger.RootShell;
+import com.cdtubear.xpwechatcall.trigger.TriggerApi;
+import com.cdtubear.xpwechatcall.trigger.TriggerService;
+import com.cdtubear.xpwechatcall.trigger.WatchdogHelper;
 
 import org.json.JSONObject;
 

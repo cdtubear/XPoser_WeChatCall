@@ -1,4 +1,4 @@
-package com.zgcwkj.xpwechatcall;
+package com.cdtubear.xpwechatcall;
 
 import android.graphics.drawable.BitmapDrawable;
 import android.view.LayoutInflater;

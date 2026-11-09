@@ -1,4 +1,4 @@
-package com.zgcwkj.xpwechatcall.hook;
+package com.cdtubear.xpwechatcall.hook;
 
 import android.app.Activity;
 import android.content.Intent;
@@ -7,7 +7,7 @@ import android.os.Bundle;
 import com.zgcwkj.comm.LogHelp;
 import com.zgcwkj.comm.ShortcutHelp;
 import com.zgcwkj.comm.TriggerContract;
-import com.zgcwkj.xpwechatcall.voip.UiCallHelper;
+import com.cdtubear.xpwechatcall.voip.UiCallHelper;
 
 import de.robv.android.xposed.XC_MethodHook;
 import de.robv.android.xposed.XposedBridge;

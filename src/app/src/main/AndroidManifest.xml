@@ -71,13 +71,13 @@
         <!-- 好友数据接收：微信进程 Hook 通过 call() 回传好友列表 -->
         <provider
             android:name=".FriendProvider"
-            android:authorities="com.zgcwkj.xpwechatcall.friends"
+            android:authorities="com.cdtubear.xpwechatcall.friends"
             android:exported="true" />
 
         <!-- 外部触发 Provider：Tasker / adb / 其它 App 可调用，需 Token -->
         <provider
             android:name=".trigger.TriggerProvider"
-            android:authorities="com.zgcwkj.xpwechatcall.trigger"
+            android:authorities="com.cdtubear.xpwechatcall.trigger"
             android:exported="true" />
 
         <!-- 外部触发设置页 -->
@@ -104,7 +104,7 @@
             <intent-filter>
                 <action android:name="android.intent.action.BOOT_COMPLETED" />
                 <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
-                <action android:name="com.zgcwkj.xpwechatcall.action.WATCHDOG_START" />
+                <action android:name="com.cdtubear.xpwechatcall.action.WATCHDOG_START" />
             </intent-filter>
         </receiver>
 

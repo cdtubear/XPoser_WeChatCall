@@ -1,4 +1,4 @@
-package com.zgcwkj.xpwechatcall;
+package com.cdtubear.xpwechatcall;
 
 import android.content.ContentProvider;
 import android.content.ContentValues;
