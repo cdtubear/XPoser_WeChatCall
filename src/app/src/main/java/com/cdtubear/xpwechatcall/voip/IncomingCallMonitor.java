@@ -157,6 +157,10 @@ public final class IncomingCallMonitor {
             // 名字还没渲染出来，再等下一轮
             return;
         }
+        if (info.name.isEmpty() && !info.fromText && phase < 2) {
+            // 给原生层 1 秒左右设置联系人，再退化成「微信来电」
+            return;
+        }
         if (!info.fromText) {
             sNativeUsed = true;
         }

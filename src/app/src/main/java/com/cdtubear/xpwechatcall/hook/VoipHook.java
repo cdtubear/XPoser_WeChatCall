@@ -3,6 +3,8 @@ package com.cdtubear.xpwechatcall.hook;
 import android.app.Activity;
 import android.content.Context;
 import android.content.Intent;
+import android.os.Handler;
+import android.os.Looper;
 
 import com.zgcwkj.comm.LogHelp;
 import com.cdtubear.xpwechatcall.voip.IncomingCallMonitor;
@@ -91,6 +93,39 @@ public final class VoipHook {
         } catch (Throwable e) {
             log("voip start hook skipped: " + e);
         }
+        // 来电振铃入口：d0.p(boolean, boolean, String) 在铃声响起时调用，
+        // 此时 d0.p=联系人、d0.r=是否去电、d0.s=是否视频
+        try {
+            XposedHelpers.findAndHookMethod(
+                "com.tencent.mm.plugin.voip.model.d0", loader, "p",
+                boolean.class, boolean.class, String.class,
+                new XC_MethodHook() {
+                    @Override
+                    protected void afterHookedMethod(MethodHookParam param) {
+                        try {
+                            var self = param.thisObject;
+                            var user = (String) XposedHelpers.getObjectField(self, "p");
+                            var outgoing = XposedHelpers.getBooleanField(self, "r");
+                            var video = XposedHelpers.getBooleanField(self, "s");
+                            log("voip ring user=" + user + " outgoing=" + outgoing
+                                + " video=" + video);
+                            if (!outgoing) {
+                                if (user != null && !user.isEmpty()) {
+                                    IncomingCallMonitor.noteNativeIncoming(user, video);
+                                } else {
+                                    // 个别版本振铃时还没填联系人，稍后再读一次
+                                    retryRingUser(self, video, 0);
+                                }
+                            }
+                        } catch (Throwable e) {
+                            log("voip ring parse failed: " + e);
+                        }
+                    }
+                });
+            log("hooked voip ring");
+        } catch (Throwable e) {
+            log("voip ring hook skipped: " + e);
+        }
     }
 
     private interface LifecycleAction {
@@ -132,6 +167,22 @@ public final class VoipHook {
     /**
      * 打印启动 Intent 的 extra key，便于确认微信用哪个字段区分来/去电
      */
+    private static void retryRingUser(Object mgr, boolean video, int attempt) {
+        new Handler(Looper.getMainLooper()).postDelayed(() -> {
+            try {
+                var user = (String) XposedHelpers.getObjectField(mgr, "p");
+                if (user != null && !user.isEmpty()) {
+                    log("voip ring user(late)=" + user);
+                    IncomingCallMonitor.noteNativeIncoming(user, video);
+                } else if (attempt < 3) {
+                    retryRingUser(mgr, video, attempt + 1);
+                }
+            } catch (Throwable e) {
+                log("voip ring user retry failed: " + e);
+            }
+        }, 800);
+    }
+
     private static void logIntent(Activity activity, String where) {
         try {
             var intent = activity.getIntent();

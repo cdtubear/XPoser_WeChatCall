@@ -50,10 +50,16 @@ public final class VoipAnnouncer {
     private static boolean sNotifyFailure;
     private static Context sApp;
 
-    /** 播报时临时压低微信铃声，让语音更清楚；结束后恢复用户原音量 */
+    /** 播报时临时关闭微信铃声，不播报时保持最大音量 */
     private static AudioManager sAudio;
-    private static int sSavedRingVolume = -1;
+    private static int sOriginalRingVolume = -1;
     private static ToneGenerator sTone;
+
+    /** 来电期间循环播报，直到接听/挂断/超时 */
+    private static boolean sLooping;
+    private static String sLoopText;
+    private static String sLoopRepeat;
+    private static Runnable sLoopTask;
 
     /** 候选引擎：第一个为系统默认引擎（null），后面是设备上可用的 TTS 引擎包名 */
     private static final java.util.List<String> CANDIDATES = new java.util.ArrayList<>();
@@ -75,12 +81,48 @@ public final class VoipAnnouncer {
         showNotification(app, name, video);
         var text = buildText(name, video);
         var repeat = buildRepeat(video);
-        MAIN.post(() -> {
-            duckRingtone(app);
-            beep();
-            // 先给一声提示音，再播报，避免被微信铃声盖住
-            MAIN.postDelayed(() -> speak(app, text, repeat, false), 600);
-        });
+        MAIN.post(() -> startLoop(app, text, repeat));
+    }
+
+    /**
+     * 循环播报：每轮之间把铃声放到最大，播报时再完全关掉
+     */
+    private static void startLoop(Context app, String text, String repeat) {
+        stopLoop();
+        sLoopText = text;
+        sLoopRepeat = repeat;
+        sLooping = true;
+        saveAndMaxRing(app);
+        playOneRound(app);
+        sLoopTask = () -> {
+            if (!sLooping) {
+                return;
+            }
+            playOneRound(app);
+            MAIN.postDelayed(sLoopTask, 10_000L);
+        };
+        MAIN.postDelayed(sLoopTask, 10_000L);
+    }
+
+    private static void playOneRound(Context app) {
+        if (!sLooping) {
+            return;
+        }
+        duckRing();
+        beep();
+        MAIN.postDelayed(() -> {
+            if (sLooping) {
+                speak(app, sLoopText, sLoopRepeat, false);
+            }
+        }, 500);
+    }
+
+    private static void stopLoop() {
+        sLooping = false;
+        if (sLoopTask != null) {
+            MAIN.removeCallbacks(sLoopTask);
+            sLoopTask = null;
+        }
     }
 
     /**
@@ -114,6 +156,7 @@ public final class VoipAnnouncer {
             // 忽略
         }
         MAIN.post(() -> {
+            stopLoop();
             if (sTts != null) {
                 try {
                     sTts.stop();
@@ -121,24 +164,23 @@ public final class VoipAnnouncer {
                     // 忽略
                 }
             }
-            restoreRingtone();
+            restoreOriginalRing();
         });
     }
 
     private static String buildText(String name, boolean video) {
         var who = name == null ? "" : name.trim();
-        var type = video ? "视频电话" : "语音电话";
+        var kind = video ? "微信视频电话" : "微信语音电话";
         if (who.isEmpty()) {
-            return "请注意，有微信" + (video ? "视频" : "语音")
-                + "来电。请按屏幕右下角的绿色按钮接听。";
+            return "请注意，有" + kind + "。按接听键接听，按挂断键挂断。";
         }
-        return "请注意，" + who + "打来微信" + type
-            + "。请按屏幕右下角的绿色按钮接听。";
+        return "请注意，" + who + "打来" + kind
+            + "。按接听键接听，按挂断键挂断。";
     }
 
     private static String buildRepeat(boolean video) {
         return "再说一遍，微信" + (video ? "视频" : "语音")
-            + "来电，请按绿色按钮接听。";
+            + "来电。按接听键接听，按挂断键挂断。";
     }
 
     /**
@@ -155,42 +197,67 @@ public final class VoipAnnouncer {
         }
     }
 
-    private static void duckRingtone(Context app) {
+    /**
+     * 记录用户原铃声，并把来电铃声调到最大
+     */
+    private static void saveAndMaxRing(Context app) {
         try {
             if (sAudio == null) {
                 sAudio = (AudioManager) app.getSystemService(Context.AUDIO_SERVICE);
             }
-            if (sAudio == null || sSavedRingVolume >= 0) {
+            if (sAudio == null) {
                 return;
             }
-            sSavedRingVolume = sAudio.getStreamVolume(AudioManager.STREAM_RING);
-            var target = Math.max(1, sSavedRingVolume / 4);
-            if (sSavedRingVolume > target) {
-                sAudio.setStreamVolume(AudioManager.STREAM_RING, target, 0);
-                LogHelp.i(TAG, "ring ducked " + sSavedRingVolume + "->" + target);
+            if (sOriginalRingVolume < 0) {
+                sOriginalRingVolume = sAudio.getStreamVolume(AudioManager.STREAM_RING);
             }
-            // 兜底：即使 TTS 没有回调，20 秒后也恢复铃声
-            MAIN.postDelayed(VoipAnnouncer::restoreRingtone, 20_000L);
+            var max = sAudio.getStreamMaxVolume(AudioManager.STREAM_RING);
+            sAudio.setStreamVolume(AudioManager.STREAM_RING, max, 0);
+            LogHelp.i(TAG, "ring max " + sOriginalRingVolume + "->" + max);
+            // 兜底：最长一通 75 秒，避免异常退出时永久占用铃声
+            MAIN.postDelayed(VoipAnnouncer::restoreOriginalRing, 90_000L);
         } catch (Throwable e) {
-            LogHelp.w(TAG, "duck ring failed: " + e.getMessage());
-            sSavedRingVolume = -1;
+            LogHelp.w(TAG, "max ring failed: " + e.getMessage());
         }
     }
 
-    private static void restoreRingtone() {
-        if (sSavedRingVolume < 0) {
+    private static void duckRing() {
+        if (sAudio == null) {
+            return;
+        }
+        try {
+            sAudio.setStreamVolume(AudioManager.STREAM_RING, 0, 0);
+        } catch (Throwable e) {
+            LogHelp.w(TAG, "duck ring failed: " + e.getMessage());
+        }
+    }
+
+    private static void restoreMaxRing() {
+        if (sAudio == null || sOriginalRingVolume < 0) {
+            return;
+        }
+        try {
+            sAudio.setStreamVolume(AudioManager.STREAM_RING,
+                sAudio.getStreamMaxVolume(AudioManager.STREAM_RING), 0);
+        } catch (Throwable ignored) {
+            // 忽略
+        }
+    }
+
+    private static void restoreOriginalRing() {
+        if (sOriginalRingVolume < 0) {
             return;
         }
         try {
             if (sAudio != null) {
                 sAudio.setStreamVolume(AudioManager.STREAM_RING,
-                    sSavedRingVolume, 0);
-                LogHelp.i(TAG, "ring restored " + sSavedRingVolume);
+                    sOriginalRingVolume, 0);
+                LogHelp.i(TAG, "ring restored " + sOriginalRingVolume);
             }
         } catch (Throwable e) {
             LogHelp.w(TAG, "restore ring failed: " + e.getMessage());
         }
-        sSavedRingVolume = -1;
+        sOriginalRingVolume = -1;
     }
 
     /**
@@ -239,7 +306,7 @@ public final class VoipAnnouncer {
             }
         } catch (Throwable e) {
             LogHelp.w(TAG, "tts speak failed: " + e.getMessage());
-            restoreRingtone();
+            restoreMaxRing();
         }
     }
 
@@ -299,13 +366,13 @@ public final class VoipAnnouncer {
                 @Override
                 public void onDone(String utteranceId) {
                     if ("xp-voip-2".equals(utteranceId)) {
-                        MAIN.post(VoipAnnouncer::restoreRingtone);
+                        MAIN.post(VoipAnnouncer::restoreMaxRing);
                     }
                 }
 
                 @Override
                 public void onError(String utteranceId) {
-                    MAIN.post(VoipAnnouncer::restoreRingtone);
+                    MAIN.post(VoipAnnouncer::restoreMaxRing);
                 }
             });
         } catch (Throwable e) {
@@ -451,3 +518,4 @@ public final class VoipAnnouncer {
         }
     }
 }
+
