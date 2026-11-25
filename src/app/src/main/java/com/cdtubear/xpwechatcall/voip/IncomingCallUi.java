@@ -111,7 +111,7 @@ public final class IncomingCallUi {
         outgoingUntil = System.currentTimeMillis() + 90_000L;
     }
 
-    private static boolean isOutgoingRecent() {
+    public static boolean isOutgoingRecent() {
         return System.currentTimeMillis() < outgoingUntil;
     }
 

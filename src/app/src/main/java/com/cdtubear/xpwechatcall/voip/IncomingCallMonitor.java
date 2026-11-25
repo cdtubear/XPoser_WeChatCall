@@ -60,6 +60,20 @@ public final class IncomingCallMonitor {
     }
 
     /**
+     * 是否已有正在响铃/通话的会话，避免重复播报
+     */
+    public static boolean hasActiveSession() {
+        synchronized (SESSIONS) {
+            for (var session : SESSIONS.values()) {
+                if (!session.done && !session.destroyed) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    /**
      * 只补充联系人信息，不在这里触发播报（播报由通知上报或界面会话负责）
      */
     public static void noteNativeName(String name, boolean video) {

@@ -14,6 +14,7 @@ import android.service.notification.StatusBarNotification;
 
 import com.zgcwkj.comm.LogHelp;
 import com.cdtubear.xpwechatcall.voip.IncomingCallMonitor;
+import com.cdtubear.xpwechatcall.voip.IncomingCallUi;
 
 import de.robv.android.xposed.XC_MethodHook;
 import de.robv.android.xposed.XposedBridge;
@@ -339,11 +340,15 @@ public final class VoipHook {
         var channelId = notification.getChannelId();
         var voipChannel = channelId != null
             && (channelId.contains("voip") || channelId.contains("VoIP"));
+        // 通话中提醒：微信用 reminder_channel_id，标题就是联系人，正文是「视频/语音通话中」
+        var reminderCall = "reminder_channel_id".equals(channelId)
+            && (text.contains("视频通话中") || text.contains("语音通话中"))
+            && !title.isEmpty() && !title.equals("微信");
         if (all.contains("通话") || all.contains("邀请")) {
             log("notif probe channel=" + channelId + " cat="
                 + notification.category + " :: " + all);
         }
-        var callLike = voipChannel
+        var callLike = voipChannel || reminderCall
             || notification.category == Notification.CATEGORY_CALL
             || (all.contains("邀请你")
                 && (all.contains("视频通话") || all.contains("语音通话")));
@@ -351,8 +356,11 @@ public final class VoipHook {
             return;
         }
         // 非通话频道的「通话中」多为聊天里的系统提示，不能当来电
-        if (!voipChannel && (all.contains("通话中") || all.contains("已接通")
-            || all.contains("正在通话"))) {
+        if (!voipChannel && !reminderCall && (all.contains("通话中")
+            || all.contains("已接通") || all.contains("正在通话"))) {
+            return;
+        }
+        if (reminderCall && IncomingCallUi.isOutgoingRecent()) {
             return;
         }
         var name = pickNotificationName(title, bigTitle, text, bigText, sub, info);
@@ -360,6 +368,10 @@ public final class VoipHook {
         log("wechat call notification name=" + name + " video=" + video
             + " channel=" + channelId + " :: " + all);
         if (name.isEmpty()) {
+            return;
+        }
+        if (IncomingCallMonitor.hasActiveSession()) {
+            IncomingCallMonitor.noteNativeName(name, video);
             return;
         }
         if (report) {
