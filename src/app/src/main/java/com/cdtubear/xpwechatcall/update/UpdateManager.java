@@ -178,16 +178,48 @@ public final class UpdateManager {
         } catch (Throwable ignored) {
             // 解析失败按不可用处理
         }
-        var archiveVersion = archive == null || archive.versionName == null
-            ? "" : archive.versionName;
-        if (archive == null || (!archiveVersion.isEmpty()
-            && compare(archiveVersion, currentVersion(context)) <= 0)) {
+        if (archive == null) {
+            // 解析失败不代表文件不可用（部分 ROM 对应用外部目录有限制），
+            // 交给安装器判断，避免刚下载完就删掉用户唯一的安装包
+            LogHelp.w(TAG, "cannot parse downloaded apk, keep it: " + file.getAbsolutePath()
+                + " size=" + file.length());
+            return file;
+        }
+        var archiveVersion = archive.versionName == null ? "" : archive.versionName;
+        // 只有明确低于当前版本才清理；相同版本也要保留：
+        // 线上 Release 可能用同一个 versionName 重新构建，覆盖安装仍然有效
+        if (!archiveVersion.isEmpty()
+            && compare(archiveVersion, currentVersion(context)) < 0) {
             prefs.edit().remove(K_APK_PATH).apply();
             //noinspection ResultOfMethodCallIgnored
             file.delete();
             return null;
         }
         return file;
+    }
+
+    /**
+     * 清掉已下载的安装包，App 升级完成后调用，避免继续提示安装旧包
+     */
+    public static void clearDownloaded(Context context) {
+        var prefs = prefs(context);
+        var path = prefs.getString(K_APK_PATH, "");
+        prefs.edit().remove(K_APK_PATH).apply();
+        if (path == null || path.isEmpty()) {
+            return;
+        }
+        try {
+            var file = new File(path);
+            var dir = apkDir(context).getCanonicalFile();
+            var parent = file.getParentFile();
+            if (parent != null && parent.getCanonicalFile().equals(dir)
+                && file.getName().toLowerCase(Locale.ROOT).endsWith(".apk")) {
+                //noinspection ResultOfMethodCallIgnored
+                file.delete();
+            }
+        } catch (Throwable e) {
+            LogHelp.w(TAG, "clear downloaded apk failed: " + e.getMessage());
+        }
     }
 
     /**
@@ -290,12 +322,38 @@ public final class UpdateManager {
     }
 
     /**
+     * 读取安装包内部的 versionName，解析失败返回空串
+     */
+    public static String apkVersion(Context context, File apk) {
+        if (apk == null || !apk.isFile()) {
+            return "";
+        }
+        try {
+            var archive = context.getPackageManager()
+                .getPackageArchiveInfo(apk.getAbsolutePath(), 0);
+            if (archive == null || archive.versionName == null) {
+                return "";
+            }
+            return archive.versionName;
+        } catch (Throwable e) {
+            return "";
+        }
+    }
+
+    /**
      * 调用系统安装器安装已下载的 APK
      *
      * @return 是否成功拉起安装界面
      */
     public static boolean install(Activity activity, File apk) {
-        if (apk == null || !apk.isFile() || apk.length() <= 0) {
+        if (apk == null) {
+            LogHelp.w(TAG, "install failed: apk is null");
+            toast(activity, "安装包不存在，请重新下载");
+            return false;
+        }
+        if (!apk.isFile() || apk.length() <= 0) {
+            LogHelp.w(TAG, "install failed: apk missing, path=" + apk.getAbsolutePath()
+                + " exists=" + apk.exists() + " size=" + apk.length());
             toast(activity, "安装包不存在，请重新下载");
             return false;
         }

@@ -1125,10 +1125,19 @@ public class TriggerSettingsActivity extends Activity {
 
     private void confirmInstall(File apk, UpdateInfo latest) {
         var version = latest == null ? "" : latest.version;
+        var message = getString(R.string.update_install_message);
+        var apkVersion = UpdateManager.apkVersion(this, apk);
+        if (!apkVersion.isEmpty() && UpdateManager.compare(apkVersion,
+            UpdateManager.currentVersion(this)) == 0) {
+            // 发布包可能忘记改版本号，提前说明，避免装完发现没有任何变化
+            message += "\n\n注意：该安装包内部版本是 " + apkVersion
+                + "，与当前版本相同，安装后不会升级。通常是发布时没有更新版本号，"
+                + "可以等作者重新发布新版本。";
+        }
         new AlertDialog.Builder(this)
             .setTitle(version.isEmpty() ? getString(R.string.update_action_install)
                 : getString(R.string.update_install_title, version))
-            .setMessage(R.string.update_install_message)
+            .setMessage(message)
             .setPositiveButton(R.string.update_install_confirm, (dialog, which) -> {
                 if (!UpdateManager.install(this, apk)) {
                     renderUpdateState();

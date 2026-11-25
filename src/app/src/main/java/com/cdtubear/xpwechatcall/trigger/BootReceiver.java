@@ -30,6 +30,14 @@ public class BootReceiver extends BroadcastReceiver {
             && !ACTION_WATCHDOG.equals(action)) {
             return;
         }
+        if (Intent.ACTION_MY_PACKAGE_REPLACED.equals(action)) {
+            // App 已被新版本替换，之前下载的安装包已完成使命，清掉避免继续提示安装
+            try {
+                com.cdtubear.xpwechatcall.update.UpdateManager.clearDownloaded(context);
+            } catch (Throwable e) {
+                LogHelp.w("XpWeChatCall", "clear update cache failed: " + e.getMessage());
+            }
+        }
         if (!TriggerContract.isEnabled(context) && !TriggerContract.isBtEnabled(context)) {
             return;
         }
