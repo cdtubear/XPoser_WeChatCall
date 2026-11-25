@@ -625,8 +625,9 @@ public final class IncomingCallUi {
             if (decor == null || decor.getWidth() <= 0 || decor.getHeight() <= 0) {
                 return false;
             }
-            var x = decor.getWidth() * 0.94f;
-            var y = decor.getHeight() * 0.89f;
+            // 实测 1080x2340 微信视频来电：绿色接听键中心约在 (852, 2094)
+            var x = decor.getWidth() * 0.79f;
+            var y = decor.getHeight() * 0.895f;
             var downTime = SystemClock.uptimeMillis();
             var down = MotionEvent.obtain(downTime, downTime,
                 MotionEvent.ACTION_DOWN, x, y, 0);
