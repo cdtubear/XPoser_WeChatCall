@@ -1,6 +1,7 @@
 package com.cdtubear.xpwechatcall.hook;
 
 import android.app.Activity;
+import android.content.Context;
 import android.content.Intent;
 
 import com.zgcwkj.comm.LogHelp;
@@ -53,8 +54,43 @@ public final class VoipHook {
         hookLifecycle(clazz, "onDestroy", new Class<?>[0],
             (activity, param) -> IncomingCallMonitor.onDestroy(activity));
         log("hooked " + VIDEO_ACTIVITY);
+        hookCallStart(loader);
         // 进程启动/冷启动接电话时，Activity 可能已经 resume 完，补扫一次当前实例
         scanCurrentActivities(loader);
+    }
+
+    /**
+     * 微信原生的通话入口：NewVoipMgr.startVoip(Context, userName, isOutCall, isVideoCall, ...)
+     *
+     * 这是唯一能直接拿到联系人、来/去电、视频/语音三要素的地方，
+     * 且比 VideoActivity 更早执行，用来弥补 Flutter 界面读不到文字的问题。
+     */
+    private static void hookCallStart(ClassLoader loader) {
+        try {
+            XposedHelpers.findAndHookMethod(
+                "com.tencent.mm.plugin.voip.model.d0", loader, "f0",
+                Context.class, String.class, boolean.class, boolean.class, long.class,
+                new XC_MethodHook() {
+                    @Override
+                    protected void afterHookedMethod(MethodHookParam param) {
+                        try {
+                            var user = (String) param.args[1];
+                            var outgoing = Boolean.TRUE.equals(param.args[2]);
+                            var video = Boolean.TRUE.equals(param.args[3]);
+                            log("voip start user=" + user + " outgoing=" + outgoing
+                                + " video=" + video);
+                            if (!outgoing) {
+                                IncomingCallMonitor.noteNativeIncoming(user, video);
+                            }
+                        } catch (Throwable e) {
+                            log("voip start parse failed: " + e);
+                        }
+                    }
+                });
+            log("hooked voip start");
+        } catch (Throwable e) {
+            log("voip start hook skipped: " + e);
+        }
     }
 
     private interface LifecycleAction {

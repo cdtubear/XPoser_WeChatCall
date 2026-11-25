@@ -49,7 +49,23 @@ public final class IncomingCallMonitor {
     private static final Map<Activity, Session> SESSIONS =
         Collections.synchronizedMap(new WeakHashMap<>());
 
+    /** 微信原生 startVoip 给出的来电信息（Flutter 界面读不到文字时使用） */
+    private static volatile String sNativeName = "";
+    private static volatile boolean sNativeVideo;
+    private static volatile long sNativeAt;
+    private static volatile boolean sNativeUsed;
+
     private IncomingCallMonitor() {
+    }
+
+    /**
+     * VoipMgr.startVoip 的来电回调：userName / isVideoCall 来自微信原生参数
+     */
+    public static void noteNativeIncoming(String name, boolean video) {
+        sNativeName = name == null ? "" : name.trim();
+        sNativeVideo = video;
+        sNativeAt = System.currentTimeMillis();
+        sNativeUsed = false;
     }
 
     /** 一次来电会话 */
@@ -57,16 +73,19 @@ public final class IncomingCallMonitor {
         final String id;
         final String name;
         final boolean video;
+        /** 界面文字是否可读；Flutter 通话界面为 false，不能用界面判断是否接听 */
+        final boolean fromText;
         final long startedAt;
         volatile boolean done;
         volatile boolean destroyed;
         volatile boolean accepted;
         volatile boolean reported;
 
-        Session(String id, String name, boolean video, long startedAt) {
+        Session(String id, String name, boolean video, boolean fromText, long startedAt) {
             this.id = id;
             this.name = name;
             this.video = video;
+            this.fromText = fromText;
             this.startedAt = startedAt;
         }
     }
@@ -123,7 +142,10 @@ public final class IncomingCallMonitor {
         if (existing != null && !existing.done) {
             return;
         }
-        var info = IncomingCallUi.detect(activity);
+        var info = nativePending();
+        if (info == null) {
+            info = IncomingCallUi.detect(activity);
+        }
         if (info == null) {
             if (phase == 3) {
                 LogHelp.i(TAG, "voip not ringing, nodes="
@@ -131,11 +153,14 @@ public final class IncomingCallMonitor {
             }
             return;
         }
-        if (info.name.isEmpty() && phase < 3) {
+        if (info.name.isEmpty() && info.fromText && phase < 3) {
             // 名字还没渲染出来，再等下一轮
             return;
         }
-        var session = new Session(newCallId(), info.name, info.video,
+        if (!info.fromText) {
+            sNativeUsed = true;
+        }
+        var session = new Session(newCallId(), info.name, info.video, info.fromText,
             System.currentTimeMillis());
         put(activity, session);
         LogHelp.i(TAG, "voip detected phase=" + phase + " name=" + session.name
@@ -191,10 +216,16 @@ public final class IncomingCallMonitor {
         if (!IncomingCallUi.isRinging(activity)) {
             if (IncomingCallUi.hasEndedText(activity)) {
                 finish(activity, session, TriggerContract.VS_MISSED, "caller cancelled");
-            } else {
-                session.accepted = true;
-                finish(activity, session, TriggerContract.VS_ANSWERED, "answered on device");
+                return;
             }
+            if (!session.fromText) {
+                // Flutter 界面没有可读文字，不能把「读不到接听按钮」当成已接听；
+                // 继续轮询接听命令，等界面销毁或 75 秒超时再收尾。
+                MAIN.postDelayed(() -> watchCall(activity, session), WATCH_MS);
+                return;
+            }
+            session.accepted = true;
+            finish(activity, session, TriggerContract.VS_ANSWERED, "answered on device");
             return;
         }
         MAIN.postDelayed(() -> watchCall(activity, session), WATCH_MS);
@@ -235,6 +266,17 @@ public final class IncomingCallMonitor {
         VoipReporter.reportState(activity, session.id, state, detail);
         LogHelp.i(TAG, "voip finish id=" + session.id + " state=" + state
             + " detail=" + detail);
+    }
+
+    /**
+     * 原生 startVoip 刚上报、尚未使用的来电信息；超过 20 秒视为过期（避免下一通误用）
+     */
+    private static IncomingCallUi.Info nativePending() {
+        if (sNativeUsed || sNativeAt <= 0
+            || System.currentTimeMillis() - sNativeAt > 20_000L) {
+            return null;
+        }
+        return new IncomingCallUi.Info(sNativeName, sNativeVideo, false);
     }
 
     private static String newCallId() {

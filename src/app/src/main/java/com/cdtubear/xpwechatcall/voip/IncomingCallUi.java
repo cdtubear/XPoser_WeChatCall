@@ -56,10 +56,17 @@ public final class IncomingCallUi {
     public static final class Info {
         public final String name;
         public final boolean video;
+        /** 是否真的从界面读到了文字（Flutter 界面为 false） */
+        public final boolean fromText;
 
         Info(String name, boolean video) {
+            this(name, video, true);
+        }
+
+        Info(String name, boolean video, boolean fromText) {
             this.name = name;
             this.video = video;
+            this.fromText = fromText;
         }
     }
 
@@ -81,7 +88,7 @@ public final class IncomingCallUi {
                 && activity.getWindow() != null
                 && activity.getWindow().getDecorView().isShown()) {
                 var video = hasVideoChrome(nodes);
-                return new Info(pickName(nodes), video);
+                return new Info(pickName(nodes), video, false);
             }
             return null;
         }

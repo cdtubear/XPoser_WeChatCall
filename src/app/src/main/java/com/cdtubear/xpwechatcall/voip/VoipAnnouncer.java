@@ -7,9 +7,14 @@ import android.app.PendingIntent;
 import android.content.Context;
 import android.content.Intent;
 import android.graphics.drawable.Icon;
+import android.media.AudioAttributes;
+import android.media.AudioManager;
+import android.media.ToneGenerator;
+import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
 import android.speech.tts.TextToSpeech;
+import android.speech.tts.UtteranceProgressListener;
 import android.widget.Toast;
 
 import com.cdtubear.xpwechatcall.MainActivity;
@@ -39,9 +44,16 @@ public final class VoipAnnouncer {
     private static boolean sInitializing;
     /** TTS 初始化期间收到的播报文本，就绪后补播 */
     private static String sPendingText;
+    /** 完整播报后再重复一遍的短句 */
+    private static String sPendingRepeat;
     /** 初始化失败时是否需要提示用户（仅试听场景） */
     private static boolean sNotifyFailure;
     private static Context sApp;
+
+    /** 播报时临时压低微信铃声，让语音更清楚；结束后恢复用户原音量 */
+    private static AudioManager sAudio;
+    private static int sSavedRingVolume = -1;
+    private static ToneGenerator sTone;
 
     /** 候选引擎：第一个为系统默认引擎（null），后面是设备上可用的 TTS 引擎包名 */
     private static final java.util.List<String> CANDIDATES = new java.util.ArrayList<>();
@@ -62,7 +74,13 @@ public final class VoipAnnouncer {
         var video = TriggerContract.CALL_VIDEO.equals(type);
         showNotification(app, name, video);
         var text = buildText(name, video);
-        MAIN.post(() -> speak(app, text, false));
+        var repeat = buildRepeat(video);
+        MAIN.post(() -> {
+            duckRingtone(app);
+            beep();
+            // 先给一声提示音，再播报，避免被微信铃声盖住
+            MAIN.postDelayed(() -> speak(app, text, repeat, false), 600);
+        });
     }
 
     /**
@@ -78,7 +96,7 @@ public final class VoipAnnouncer {
                 sCandidatesBuilt = false;
                 CANDIDATES.clear();
             }
-            speak(app, "这是一条微信来电播报测试", true);
+            speak(app, "这是一条微信来电播报测试", null, true);
         });
     }
 
@@ -103,20 +121,85 @@ public final class VoipAnnouncer {
                     // 忽略
                 }
             }
+            restoreRingtone();
         });
     }
 
     private static String buildText(String name, boolean video) {
         var who = name == null ? "" : name.trim();
-        var type = video ? "微信视频来电" : "微信语音来电";
-        return who.isEmpty() ? type : who + "，" + type;
+        var type = video ? "视频电话" : "语音电话";
+        if (who.isEmpty()) {
+            return "请注意，有微信" + (video ? "视频" : "语音")
+                + "来电。请按屏幕右下角的绿色按钮接听。";
+        }
+        return "请注意，" + who + "打来微信" + type
+            + "。请按屏幕右下角的绿色按钮接听。";
+    }
+
+    private static String buildRepeat(boolean video) {
+        return "再说一遍，微信" + (video ? "视频" : "语音")
+            + "来电，请按绿色按钮接听。";
+    }
+
+    /**
+     * 播报前先“叮”一声，并临时压低微信铃声，让老人听得清。
+     */
+    private static void beep() {
+        try {
+            if (sTone == null) {
+                sTone = new ToneGenerator(AudioManager.STREAM_MUSIC, 90);
+            }
+            sTone.startTone(ToneGenerator.TONE_PROP_BEEP2, 500);
+        } catch (Throwable e) {
+            LogHelp.w(TAG, "tone failed: " + e.getMessage());
+        }
+    }
+
+    private static void duckRingtone(Context app) {
+        try {
+            if (sAudio == null) {
+                sAudio = (AudioManager) app.getSystemService(Context.AUDIO_SERVICE);
+            }
+            if (sAudio == null || sSavedRingVolume >= 0) {
+                return;
+            }
+            sSavedRingVolume = sAudio.getStreamVolume(AudioManager.STREAM_RING);
+            var target = Math.max(1, sSavedRingVolume / 4);
+            if (sSavedRingVolume > target) {
+                sAudio.setStreamVolume(AudioManager.STREAM_RING, target, 0);
+                LogHelp.i(TAG, "ring ducked " + sSavedRingVolume + "->" + target);
+            }
+            // 兜底：即使 TTS 没有回调，20 秒后也恢复铃声
+            MAIN.postDelayed(VoipAnnouncer::restoreRingtone, 20_000L);
+        } catch (Throwable e) {
+            LogHelp.w(TAG, "duck ring failed: " + e.getMessage());
+            sSavedRingVolume = -1;
+        }
+    }
+
+    private static void restoreRingtone() {
+        if (sSavedRingVolume < 0) {
+            return;
+        }
+        try {
+            if (sAudio != null) {
+                sAudio.setStreamVolume(AudioManager.STREAM_RING,
+                    sSavedRingVolume, 0);
+                LogHelp.i(TAG, "ring restored " + sSavedRingVolume);
+            }
+        } catch (Throwable e) {
+            LogHelp.w(TAG, "restore ring failed: " + e.getMessage());
+        }
+        sSavedRingVolume = -1;
     }
 
     /**
      * 播报文本。TTS 不可用时不会影响通知，试听场景会给出提示。
      */
-    private static void speak(Context app, String text, boolean notifyFailure) {
+    private static void speak(Context app, String text, String repeat,
+                              boolean notifyFailure) {
         sPendingText = text;
+        sPendingRepeat = repeat;
         if (notifyFailure) {
             sNotifyFailure = true;
         }
@@ -139,10 +222,24 @@ public final class VoipAnnouncer {
             return;
         }
         sPendingText = null;
+        var repeat = sPendingRepeat;
+        sPendingRepeat = null;
         try {
-            sTts.speak(pending, TextToSpeech.QUEUE_FLUSH, null, "xp-voip");
+            var params = new Bundle();
+            params.putFloat(TextToSpeech.Engine.KEY_PARAM_VOLUME, 1.0f);
+            params.putInt(TextToSpeech.Engine.KEY_PARAM_STREAM,
+                AudioManager.STREAM_MUSIC);
+            sTts.speak(pending, TextToSpeech.QUEUE_FLUSH, params, "xp-voip-1");
+            if (repeat != null) {
+                var params2 = new Bundle();
+                params2.putFloat(TextToSpeech.Engine.KEY_PARAM_VOLUME, 1.0f);
+                params2.putInt(TextToSpeech.Engine.KEY_PARAM_STREAM,
+                    AudioManager.STREAM_MUSIC);
+                sTts.speak(repeat, TextToSpeech.QUEUE_ADD, params2, "xp-voip-2");
+            }
         } catch (Throwable e) {
             LogHelp.w(TAG, "tts speak failed: " + e.getMessage());
+            restoreRingtone();
         }
     }
 
@@ -187,7 +284,33 @@ public final class VoipAnnouncer {
             startNextEngine(app);
             return;
         }
-        sTts.setSpeechRate(0.95f);
+        sTts.setSpeechRate(0.86f);
+        sTts.setPitch(1.0f);
+        try {
+            sTts.setAudioAttributes(new AudioAttributes.Builder()
+                .setUsage(AudioAttributes.USAGE_ASSISTANCE_ACCESSIBILITY)
+                .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+                .build());
+            sTts.setOnUtteranceProgressListener(new UtteranceProgressListener() {
+                @Override
+                public void onStart(String utteranceId) {
+                }
+
+                @Override
+                public void onDone(String utteranceId) {
+                    if ("xp-voip-2".equals(utteranceId)) {
+                        MAIN.post(VoipAnnouncer::restoreRingtone);
+                    }
+                }
+
+                @Override
+                public void onError(String utteranceId) {
+                    MAIN.post(VoipAnnouncer::restoreRingtone);
+                }
+            });
+        } catch (Throwable e) {
+            LogHelp.w(TAG, "tts audio attrs failed: " + e.getMessage());
+        }
         sReady = true;
         sUnavailable = false;
         sNotifyFailure = false;
@@ -285,7 +408,7 @@ public final class VoipAnnouncer {
             channel.setDescription("微信来电时播报联系人并发通知");
             channel.setSound(null, null);
             channel.enableVibration(true);
-            channel.setVibrationPattern(new long[]{0, 300, 200, 300});
+            channel.setVibrationPattern(new long[]{0, 500, 300, 500, 300, 800});
             channel.setShowBadge(false);
             manager.createNotificationChannel(channel);
 
@@ -304,10 +427,12 @@ public final class VoipAnnouncer {
 
             var title = video ? "微信视频来电" : "微信语音来电";
             var who = name == null ? "" : name.trim();
+            var body = who.isEmpty() ? "请按屏幕右下角绿色按钮接听"
+                : who + " 来电，请按屏幕右下角绿色按钮接听";
             var notification = new Notification.Builder(app, CHANNEL)
                 .setSmallIcon(R.drawable.ic_launcher)
-                .setContentTitle(title)
-                .setContentText(who.isEmpty() ? "未知联系人" : who)
+                .setContentTitle(who.isEmpty() ? title : title + " · " + who)
+                .setContentText(body)
                 .setContentIntent(contentIntent)
                 .setCategory(Notification.CATEGORY_CALL)
                 .setPriority(Notification.PRIORITY_HIGH)
