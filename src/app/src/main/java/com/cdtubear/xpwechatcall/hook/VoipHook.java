@@ -34,57 +34,52 @@ public final class VoipHook {
         if (!INSTALLED.compareAndSet(false, true)) {
             return;
         }
+        Class<?> clazz;
         try {
-            var clazz = XposedHelpers.findClass(VIDEO_ACTIVITY, loader);
-            XposedHelpers.findAndHookMethod(clazz, "onCreate", android.os.Bundle.class,
-                new XC_MethodHook() {
-                    @Override
-                    protected void afterHookedMethod(MethodHookParam param) {
-                        dispatch((Activity) param.thisObject, "onCreate");
-                    }
-                });
-            XposedHelpers.findAndHookMethod(clazz, "onStart", new XC_MethodHook() {
-                @Override
-                protected void afterHookedMethod(MethodHookParam param) {
-                    dispatch((Activity) param.thisObject, "onStart");
-                }
-            });
-            XposedHelpers.findAndHookMethod(clazz, "onResume", new XC_MethodHook() {
-                @Override
-                protected void afterHookedMethod(MethodHookParam param) {
-                    dispatch((Activity) param.thisObject, "onResume");
-                }
-            });
-            XposedHelpers.findAndHookMethod(clazz, "onNewIntent", Intent.class,
-                new XC_MethodHook() {
-                    @Override
-                    protected void afterHookedMethod(MethodHookParam param) {
-                        dispatch((Activity) param.thisObject, "onNewIntent");
-                    }
-                });
-            XposedHelpers.findAndHookMethod(clazz, "onWindowFocusChanged", boolean.class,
-                new XC_MethodHook() {
-                    @Override
-                    protected void afterHookedMethod(MethodHookParam param) {
-                        if (Boolean.TRUE.equals(param.args[0])) {
-                            dispatch((Activity) param.thisObject, "onWindowFocusChanged");
-                        }
-                    }
-                });
-            XposedHelpers.findAndHookMethod(clazz, "onDestroy", new XC_MethodHook() {
-                @Override
-                protected void afterHookedMethod(MethodHookParam param) {
-                    IncomingCallMonitor.onDestroy((Activity) param.thisObject);
-                }
-            });
-            log("hooked " + VIDEO_ACTIVITY);
+            clazz = XposedHelpers.findClass(VIDEO_ACTIVITY, loader);
         } catch (Throwable e) {
-            // 微信版本差异或类不存在时跳过来电功能，不影响通话发起
             log("voip hook skipped: " + e);
             return;
         }
+        // 每个生命周期单独挂，某个方法不存在时不能影响其它 Hook
+        hookLifecycle(clazz, "onCreate", new Class<?>[]{android.os.Bundle.class},
+            (activity, param) -> dispatch(activity, "onCreate"));
+        hookLifecycle(clazz, "onStart", new Class<?>[0],
+            (activity, param) -> dispatch(activity, "onStart"));
+        hookLifecycle(clazz, "onResume", new Class<?>[0],
+            (activity, param) -> dispatch(activity, "onResume"));
+        hookLifecycle(clazz, "onNewIntent", new Class<?>[]{Intent.class},
+            (activity, param) -> dispatch(activity, "onNewIntent"));
+        hookLifecycle(clazz, "onDestroy", new Class<?>[0],
+            (activity, param) -> IncomingCallMonitor.onDestroy(activity));
+        log("hooked " + VIDEO_ACTIVITY);
         // 进程启动/冷启动接电话时，Activity 可能已经 resume 完，补扫一次当前实例
         scanCurrentActivities(loader);
+    }
+
+    private interface LifecycleAction {
+        void run(Activity activity, XC_MethodHook.MethodHookParam param);
+    }
+
+    private static void hookLifecycle(Class<?> clazz, String name,
+                                      Class<?>[] parameterTypes,
+                                      LifecycleAction action) {
+        try {
+            var method = XposedHelpers.findMethodExactIfExists(clazz, name, parameterTypes);
+            if (method == null) {
+                log("voip hook missing: " + name);
+                return;
+            }
+            XposedBridge.hookMethod(method, new XC_MethodHook() {
+                @Override
+                protected void afterHookedMethod(MethodHookParam param) {
+                    action.run((Activity) param.thisObject, param);
+                }
+            });
+        } catch (Throwable e) {
+            // 单个 Hook 失败不影响其它生命周期
+            log("voip hook " + name + " failed: " + e);
+        }
     }
 
     private static void dispatch(Activity activity, String where) {

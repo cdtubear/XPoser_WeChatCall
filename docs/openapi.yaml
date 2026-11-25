@@ -2,7 +2,7 @@ openapi: 3.0.3
 
 info:
   title: XpWeChatCall 外部触发 API
-  version: 1.1.8
+  version: 1.1.9
   description: |
     XpWeChatCall 模块内置 HTTP 服务，用于从外部 webhook / 脚本触发微信视频或语音通话。
 
@@ -1137,4 +1137,5 @@ components:
         current_request_id:
           type: string
           description: 仅 `BUSY` 时返回当前进行中的请求 ID
+
 
