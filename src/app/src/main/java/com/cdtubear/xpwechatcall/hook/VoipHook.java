@@ -103,8 +103,25 @@ public final class VoipHook {
                 return;
             }
             var extras = intent.getExtras();
+            var detail = new StringBuilder("null");
+            if (extras != null) {
+                detail.setLength(0);
+                for (var key : extras.keySet()) {
+                    Object value;
+                    try {
+                        value = extras.get(key);
+                    } catch (Throwable e) {
+                        value = "<" + e.getClass().getSimpleName() + ">";
+                    }
+                    var text = String.valueOf(value);
+                    if (text.length() > 60) {
+                        text = text.substring(0, 60) + "...";
+                    }
+                    detail.append(key).append('=').append(text).append("; ");
+                }
+            }
             log(where + " intent action=" + intent.getAction()
-                + " extras=" + (extras == null ? "null" : extras.keySet()));
+                + " extras=[" + detail + "]");
         } catch (Throwable e) {
             log(where + " intent log failed: " + e);
         }

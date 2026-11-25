@@ -151,6 +151,8 @@ public class UiCallHelper {
             var label = sVideo ? "视频通话" : "语音通话";
             var option = findLastByText(label);
             if (option != null) {
+                // 标记为模块去电，避免随后打开的 VideoActivity 被当成来电播报
+                IncomingCallUi.noteOutgoing();
                 click(option);
                 log("step2: clicked " + label);
                 sStep = -1;

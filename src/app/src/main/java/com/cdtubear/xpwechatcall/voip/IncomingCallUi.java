@@ -28,6 +28,9 @@ public final class IncomingCallUi {
 
     private static final String TAG = "XpWeChatCall";
 
+    /** 模块自己发起通话的有效期，期间出现的 VideoActivity 不当成来电 */
+    private static volatile long outgoingUntil;
+
     /** 接听按钮文案 */
     public static final String TEXT_ACCEPT = "接听";
 
@@ -72,6 +75,14 @@ public final class IncomingCallUi {
         var nodes = collect(activity);
         // 新版微信的接听按钮只有图标、没有「接听」文字，因此「邀请你视频/语音通话」也算来电
         if (!hasAccept(nodes) && !hasInvite(nodes)) {
+            // 兜底：VideoActivity 已在前台、界面文字抓不到（系统窗口可能尚未布局完成），
+            // 且不是本模块刚发起的通话，就按来电处理，避免漏播报。
+            if (!looksLikeOutgoing(nodes) && !isOutgoingRecent()
+                && activity.getWindow() != null
+                && activity.getWindow().getDecorView().isShown()) {
+                var video = hasVideoChrome(nodes);
+                return new Info(pickName(nodes), video);
+            }
             return null;
         }
         var video = false;
@@ -86,6 +97,42 @@ public final class IncomingCallUi {
             }
         }
         return new Info(pickName(nodes), video);
+    }
+
+    /** 本模块发起通话前调用，避免把去电界面误判成来电 */
+    public static void noteOutgoing() {
+        outgoingUntil = System.currentTimeMillis() + 90_000L;
+    }
+
+    private static boolean isOutgoingRecent() {
+        return System.currentTimeMillis() < outgoingUntil;
+    }
+
+    /** 去电界面的典型文案 */
+    private static boolean looksLikeOutgoing(List<TextNode> nodes) {
+        for (var node : nodes) {
+            if (node.text.contains("等待对方接受")
+                || node.text.contains("正在呼叫")
+                || node.text.contains("对方已拒绝")) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /** 视频通话界面特征按钮，用于判断 video=true */
+    private static boolean hasVideoChrome(List<TextNode> nodes) {
+        var flip = false;
+        var blur = false;
+        for (var node : nodes) {
+            if (node.text.contains("翻转")) {
+                flip = true;
+            }
+            if (node.text.contains("模糊背景") || node.text.contains("摄像头")) {
+                blur = true;
+            }
+        }
+        return flip && blur;
     }
 
     /**
@@ -147,6 +194,10 @@ public final class IncomingCallUi {
             target = findAnswerByGeometry(activity);
         }
         if (target == null) {
+            if (tapAnswerByRatio(activity)) {
+                LogHelp.i(TAG, "voip accept: ratio tap ok");
+                return true;
+            }
             LogHelp.w(TAG, "voip accept: 接听 button not found");
             return false;
         }
@@ -361,6 +412,16 @@ public final class IncomingCallUi {
         try {
             var nodes = collect(activity);
             var builder = new StringBuilder();
+            var decor = activity.getWindow() == null
+                ? null : activity.getWindow().getDecorView();
+            if (decor != null) {
+                builder.append("decor=").append(decor.getWidth()).append('x')
+                    .append(decor.getHeight()).append(" shown=").append(decor.isShown())
+                    .append(" children=")
+                    .append(decor instanceof ViewGroup ? ((ViewGroup) decor).getChildCount() : 0)
+                    .append(" roots=").append(UiCallHelper.allRootViews().size())
+                    .append(" nodes=").append(nodes.size()).append(" :: ");
+            }
             for (var node : nodes) {
                 var text = node.text;
                 if (text.length() > 40) {
@@ -386,11 +447,19 @@ public final class IncomingCallUi {
         if (decor != null) {
             collectView(decor, nodes);
         }
+        // 微信通话界面偶尔挂在同进程的独立窗口上，主窗口取不到文字时补扫一次
+        if (nodes.isEmpty()) {
+            for (var root : UiCallHelper.allRootViews()) {
+                if (root != null && root != decor) {
+                    collectView(root, nodes);
+                }
+            }
+        }
         return nodes;
     }
 
     private static void collectView(View view, List<TextNode> out) {
-        if (view == null || view.getVisibility() != View.VISIBLE || !isOnScreen(view)) {
+        if (view == null || view.getVisibility() != View.VISIBLE || !view.isShown()) {
             return;
         }
         var desc = view.getContentDescription();
@@ -535,6 +604,35 @@ public final class IncomingCallUi {
             return true;
         } catch (Throwable e) {
             LogHelp.w(TAG, "voip tap failed: " + e.getMessage());
+            return false;
+        }
+    }
+
+    /**
+     * 兜底：接听按钮只有图标时，按界面比例点击右下角的绿色接听键
+     */
+    private static boolean tapAnswerByRatio(Activity activity) {
+        try {
+            var decor = activity.getWindow() == null
+                ? null : activity.getWindow().getDecorView();
+            if (decor == null || decor.getWidth() <= 0 || decor.getHeight() <= 0) {
+                return false;
+            }
+            var x = decor.getWidth() * 0.94f;
+            var y = decor.getHeight() * 0.89f;
+            var downTime = SystemClock.uptimeMillis();
+            var down = MotionEvent.obtain(downTime, downTime,
+                MotionEvent.ACTION_DOWN, x, y, 0);
+            var up = MotionEvent.obtain(downTime, downTime + 40,
+                MotionEvent.ACTION_UP, x, y, 0);
+            decor.dispatchTouchEvent(down);
+            decor.dispatchTouchEvent(up);
+            down.recycle();
+            up.recycle();
+            LogHelp.i(TAG, "voip accept: ratio tap " + (int) x + "," + (int) y);
+            return true;
+        } catch (Throwable e) {
+            LogHelp.w(TAG, "voip accept ratio failed: " + e);
             return false;
         }
     }
