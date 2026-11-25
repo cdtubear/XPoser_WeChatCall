@@ -336,20 +336,29 @@ public final class VoipHook {
         var info = textOf(extras.getCharSequence(Notification.EXTRA_INFO_TEXT));
         var all = title + " | " + bigTitle + " | " + text + " | " + bigText
             + " | " + sub + " | " + info;
+        var channelId = notification.getChannelId();
+        var voipChannel = channelId != null
+            && (channelId.contains("voip") || channelId.contains("VoIP"));
         if (all.contains("通话") || all.contains("邀请")) {
-            log("notif probe cat=" + notification.category + " :: " + all);
+            log("notif probe channel=" + channelId + " cat="
+                + notification.category + " :: " + all);
         }
-        var callLike = notification.category == Notification.CATEGORY_CALL
+        var callLike = voipChannel
+            || notification.category == Notification.CATEGORY_CALL
             || (all.contains("邀请你")
                 && (all.contains("视频通话") || all.contains("语音通话")));
-        if (!callLike || all.contains("通话中") || all.contains("已接通")
-            || all.contains("正在通话")) {
+        if (!callLike) {
+            return;
+        }
+        // 非通话频道的「通话中」多为聊天里的系统提示，不能当来电
+        if (!voipChannel && (all.contains("通话中") || all.contains("已接通")
+            || all.contains("正在通话"))) {
             return;
         }
         var name = pickNotificationName(title, bigTitle, text, bigText, sub, info);
         var video = all.contains("视频");
         log("wechat call notification name=" + name + " video=" + video
-            + " :: " + all);
+            + " channel=" + channelId + " :: " + all);
         if (name.isEmpty()) {
             return;
         }
