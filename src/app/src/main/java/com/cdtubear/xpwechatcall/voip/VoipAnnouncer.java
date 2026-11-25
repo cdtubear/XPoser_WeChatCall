@@ -316,15 +316,14 @@ public final class VoipAnnouncer {
     }
 
     private static void restoreOriginalRing() {
-        if (sOriginalRingVolume < 0) {
+        if (sAudio == null) {
             return;
         }
         try {
-            if (sAudio != null) {
-                sAudio.setStreamVolume(AudioManager.STREAM_RING,
-                    sOriginalRingVolume, 0);
-                LogHelp.i(TAG, "ring restored " + sOriginalRingVolume);
-            }
+            // 用户要求不通话时铃声保持最大，不能恢复成保存时的 0（否则下一通会没铃声）
+            var max = sAudio.getStreamMaxVolume(AudioManager.STREAM_RING);
+            sAudio.setStreamVolume(AudioManager.STREAM_RING, max, 0);
+            LogHelp.i(TAG, "ring kept max " + max);
         } catch (Throwable e) {
             LogHelp.w(TAG, "restore ring failed: " + e.getMessage());
         }
