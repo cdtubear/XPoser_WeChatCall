@@ -16,6 +16,9 @@
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
     <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
 
+    <!-- 检查更新：下载最新 APK 后交给系统安装器 -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+
     <!-- 蓝牙触发：手机作为 BLE 外设（GATT Server） -->
     <uses-permission
         android:name="android.permission.BLUETOOTH"
@@ -79,6 +82,13 @@
             android:name=".trigger.TriggerProvider"
             android:authorities="com.cdtubear.xpwechatcall.trigger"
             android:exported="true" />
+
+        <!-- 更新安装包只读通道：仅供系统安装器通过临时授权读取 APK -->
+        <provider
+            android:name=".update.UpdateFileProvider"
+            android:authorities="com.cdtubear.xpwechatcall.update"
+            android:exported="false"
+            android:grantUriPermissions="true" />
 
         <!-- 外部触发设置页 -->
         <activity

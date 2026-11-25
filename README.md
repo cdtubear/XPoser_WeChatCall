@@ -40,6 +40,7 @@ Hook 边界选择稳定且可被外部拉起的 `com.tencent.mm.ui.LauncherUI`�
 - **底部导航统一管理首页 / 日志 / 设置，设置页可查看已连接 BLE 设备详情**
 - **支持 root 看门狗保活：App 进程被杀后自动恢复 webhook / 蓝牙服务**
 - **支持 root 锁屏唤醒 + 自动解锁（仅滑动锁）**
+- **支持检查更新：从 GitHub Releases 拉取最新版本，校验签名后直接安装**
 - 支持快捷方式固定（`ShortcutManager`）与旧版广播两种创建方式
 - 支持写入运行日志，便于排查
 
@@ -57,6 +58,7 @@ Hook 边界选择稳定且可被外部拉起的 `com.tencent.mm.ui.LauncherUI`�
 - 已安装 Xposed 框架（LSPosed / EdXposed 等）
 - 已安装微信
 - 支持的 Xposed 作用域：`com.tencent.mm`
+- 使用「检查更新」自升级时需要允许 `REQUEST_INSTALL_PACKAGES`（安装未知应用）
 
 ## 使用步骤
 
@@ -296,6 +298,29 @@ String json = result.getString("result");
 
 完整协议、nRF Connect 步骤、ESP32 示例和排错说明见 [`docs/bluetooth.md`](docs/bluetooth.md)。
 
+## 检查更新
+
+设置页「版本更新」卡片支持一键检查并安装新版本，不用再到发布页手动下载覆盖安装。
+
+### 工作方式
+
+1. 点击「检查更新」后请求 `https://api.github.com/repos/cdtubear/XPoser_WeChatCall/releases/latest`，读取 `tag_name` 和 `.apk` 附件。
+2. 版本号按点分段做数值比较（忽略 `v` 前缀和 `-rc1` 之类的后缀），只有比当前安装版本新才提示下载。
+3. 下载保存到应用外部私有目录 `Android/data/com.cdtubear.xpwechatcall/files/Download/updates/`，下载过程显示百分比，失败会给出原因。
+4. 下载完成后先校验再安装：
+   - 包名必须是 `com.cdtubear.xpwechatcall`
+   - `versionCode` 不能低于当前已安装版本
+   - 签名证书 SHA-256 必须与已安装版本一致
+5. 校验通过后经 `UpdateFileProvider` 授权给系统安装器，首次使用需要允许「安装未知应用」。
+
+### 注意事项
+
+- 只识别 GitHub Releases 上带 `.apk` 附件的版本；没有附件时会引导到发布页手动下载。
+- GitHub API 未认证时每小时 60 次，点到限流会提示稍后再试，属于正常现象。
+- 自升级只在同一签名下有效：debug 包与 release 包签名不同，会直接提示「签名不一致，无法覆盖安装」。
+- 安装完成后微信进程仍持有旧版模块代码，需要重启微信（或重启手机）才能加载新版本。
+- 下载的安装包保存在应用私有目录，安装成功后旧包会自动清理，不会长期占用空间。
+
 ## 项目结构
 
 ```text
@@ -312,7 +337,7 @@ app/src/main/java/com/
   cdtubear/xpwechatcall/
     XposedEntry.java      Xposed 入口
     MainActivity.java     好友列表管理界面
-    FriendAdapter.java    好友列表适配器
+    FriendRow.java        好友列表行视图
     FriendProvider.java   好友数据接收 Provider
     ShortcutActivity.java 快捷方式入口，向微信转发通话请求
     TriggerSettingsActivity.java 外部触发设置页
@@ -333,6 +358,10 @@ app/src/main/java/com/
       BootReceiver.java   开机 / 升级后恢复外部触发服务
     voip/
       UiCallHelper.java   打开聊天页并模拟点击发起通话
+    update/
+      UpdateInfo.java     最新版本信息模型（版本号、说明、APK 地址）
+      UpdateManager.java  版本检查、APK 下载、包名/版本/签名校验、拉起安装器
+      UpdateFileProvider.java 只读文件通道，仅供系统安装器读取下载好的 APK
     widget/
       CallWidgetProvider.java 桌面控件基类，绑定好友并刷新显示
       Widget1x1Provider.java  1×1 尺寸控件
@@ -355,6 +384,7 @@ app/src/main/res/
 | `ContactHook` | 捕获 WCDB 主库连接，从 `rcontact` 表读取并过滤好友列表 |
 | `UiCallHelper` | 打开好友聊天页，按界面文案模拟点击「+」与通话按钮 |
 | `CallWidgetProvider` | 桌面控件，显示好友头像与名字，点击直接发起通话 |
+| `UpdateManager` | 读取 GitHub Releases 最新版本，下载并校验 APK 后交给系统安装器 |
 | `TriggerService` | 外部触发前台服务：HTTP 监听、BLE 生命周期、Token 鉴权、限流、超时扫描、心跳 |
 | `TriggerApi` | 外部触发核心逻辑，HTTP / Provider / 蓝牙共用；含好友查询与列表接口 |
 | `TriggerStore` | 请求状态持久化、幂等、忙状态、结果回调领取 |

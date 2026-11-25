@@ -3,6 +3,7 @@ package com.cdtubear.xpwechatcall.trigger;
 import android.content.Context;
 import android.net.Uri;
 
+import com.cdtubear.xpwechatcall.BuildConfig;
 import com.zgcwkj.comm.FriendIndex;
 import com.zgcwkj.comm.FriendSync;
 import com.zgcwkj.comm.LogHelp;
@@ -241,7 +242,7 @@ public final class TriggerApi {
     public static JSONObject health(Context context) {
         var response = ok();
         try {
-            response.put("module_version", "1.1.2");
+            response.put("module_version", BuildConfig.VERSION_NAME);
             response.put("enabled", TriggerContract.isEnabled(context));
             response.put("service_running", TriggerService.isRunning());
             response.put("http_enabled", TriggerContract.isEnabled(context));

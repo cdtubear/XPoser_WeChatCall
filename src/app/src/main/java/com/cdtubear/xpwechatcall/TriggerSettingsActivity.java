@@ -16,9 +16,11 @@ import android.os.Looper;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.WindowInsets;
+import android.widget.Button;
 import android.widget.EditText;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
+import android.widget.ProgressBar;
 import android.widget.Switch;
 import android.widget.TextView;
 import android.widget.Toast;
@@ -32,6 +34,8 @@ import com.cdtubear.xpwechatcall.trigger.RootShell;
 import com.cdtubear.xpwechatcall.trigger.TriggerApi;
 import com.cdtubear.xpwechatcall.trigger.TriggerService;
 import com.cdtubear.xpwechatcall.trigger.WatchdogHelper;
+import com.cdtubear.xpwechatcall.update.UpdateInfo;
+import com.cdtubear.xpwechatcall.update.UpdateManager;
 
 import org.json.JSONArray;
 import org.json.JSONObject;
@@ -75,10 +79,16 @@ public class TriggerSettingsActivity extends Activity {
     private EditText etPackages;
     private LinearLayout llBtDevices;
     private TextView tvBtDevicesEmpty;
+    private TextView tvUpdateVersion;
+    private TextView tvUpdateStatus;
+    private ProgressBar pbUpdate;
+    private Button btnUpdate;
 
     /** 程序化更新 Switch 时避免触发保存逻辑 */
     private boolean syncingUi;
     private boolean keepAliveBusy;
+    /** 页面是否处于前台，后台回调不弹窗 */
+    private boolean resumed;
 
     private final Handler deviceHandler = new Handler(Looper.getMainLooper());
     private final Runnable devicePoll = new Runnable() {
@@ -106,6 +116,7 @@ public class TriggerSettingsActivity extends Activity {
     @Override
     protected void onResume() {
         super.onResume();
+        resumed = true;
         // 通知栏「停止」会直接关闭开关，回到页面时同步一次
         syncingUi = true;
         swEnable.setChecked(TriggerContract.isEnabled(this));
@@ -115,6 +126,7 @@ public class TriggerSettingsActivity extends Activity {
         updateBtStatus();
         renderBtDevices();
         refreshKeepAliveAsync();
+        renderUpdateState();
         // 已连接设备详情需要实时刷新
         deviceHandler.removeCallbacks(devicePoll);
         deviceHandler.postDelayed(devicePoll, DEVICE_POLL_MS);
@@ -123,6 +135,7 @@ public class TriggerSettingsActivity extends Activity {
     @Override
     protected void onPause() {
         super.onPause();
+        resumed = false;
         deviceHandler.removeCallbacks(devicePoll);
     }
 
@@ -144,6 +157,10 @@ public class TriggerSettingsActivity extends Activity {
         etPackages = findViewById(R.id.et_packages);
         llBtDevices = findViewById(R.id.ll_bt_devices);
         tvBtDevicesEmpty = findViewById(R.id.tv_bt_devices_empty);
+        tvUpdateVersion = findViewById(R.id.tv_update_version);
+        tvUpdateStatus = findViewById(R.id.tv_update_status);
+        pbUpdate = findViewById(R.id.pb_update);
+        btnUpdate = findViewById(R.id.btn_update);
     }
 
     /**
@@ -243,6 +260,9 @@ public class TriggerSettingsActivity extends Activity {
             KeepAliveHelper.openAutoStartSettings(this));
         findViewById(R.id.btn_bt_uuid).setOnClickListener(v -> copyBluetoothUuids());
         findViewById(R.id.btn_bt_help).setOnClickListener(v -> showBluetoothHelp());
+        btnUpdate.setOnClickListener(v -> onUpdateClicked());
+        findViewById(R.id.btn_update_page).setOnClickListener(v ->
+            UpdateManager.openReleasesPage(this));
         swEnable.setOnCheckedChangeListener((buttonView, isChecked) -> {
             if (!syncingUi) {
                 saveAndApply();
@@ -794,6 +814,251 @@ public class TriggerSettingsActivity extends Activity {
             .setView(scroll)
             .setPositiveButton("关闭", null)
             .show();
+    }
+
+    // ======================= 版本更新 =======================
+
+    /**
+     * 根据缓存和当前任务状态刷新更新卡片
+     */
+    private void renderUpdateState() {
+        var current = UpdateManager.currentVersion(this);
+        tvUpdateVersion.setText(getString(R.string.update_version_value, current));
+
+        if (UpdateManager.isChecking()) {
+            pbUpdate.setVisibility(View.VISIBLE);
+            pbUpdate.setIndeterminate(true);
+            tvUpdateStatus.setText(R.string.update_checking);
+            btnUpdate.setEnabled(false);
+            btnUpdate.setText(R.string.update_action_checking);
+            return;
+        }
+        if (UpdateManager.isDownloading()) {
+            var percent = UpdateManager.progress();
+            pbUpdate.setVisibility(View.VISIBLE);
+            pbUpdate.setIndeterminate(percent < 0);
+            if (percent >= 0) {
+                pbUpdate.setProgress(percent);
+            }
+            tvUpdateStatus.setText(percent >= 0
+                ? getString(R.string.update_status_downloading, percent) : "下载中…");
+            btnUpdate.setEnabled(false);
+            btnUpdate.setText(R.string.update_action_busy);
+            return;
+        }
+
+        btnUpdate.setEnabled(true);
+        pbUpdate.setVisibility(View.GONE);
+
+        var ready = UpdateManager.downloadedApk(this);
+        if (ready != null) {
+            tvUpdateStatus.setText(getString(R.string.update_downloaded,
+                UpdateManager.formatSize(ready.length())));
+            btnUpdate.setText(R.string.update_action_install);
+            return;
+        }
+
+        var latest = UpdateManager.latest(this);
+        if (latest == null) {
+            tvUpdateStatus.setText(R.string.update_status_idle);
+            btnUpdate.setText(R.string.update_action_check);
+            return;
+        }
+        var compare = UpdateManager.compare(latest.version, current);
+        if (compare > 0) {
+            tvUpdateStatus.setText(getString(R.string.update_found, latest.version,
+                UpdateManager.formatSize(latest.apkSize)));
+            btnUpdate.setText(latest.hasApk()
+                ? R.string.update_action_download : R.string.update_action_check);
+            return;
+        }
+        if (compare < 0) {
+            tvUpdateStatus.setText(getString(R.string.update_ahead, latest.version));
+            btnUpdate.setText(R.string.update_action_check);
+            return;
+        }
+        btnUpdate.setText(R.string.update_action_check);
+        var checkedAt = UpdateManager.checkedAt(this);
+        if (checkedAt > 0) {
+            var stamp = new java.text.SimpleDateFormat("MM-dd HH:mm",
+                java.util.Locale.ROOT).format(new java.util.Date(checkedAt));
+            tvUpdateStatus.setText(getString(R.string.update_latest_at, stamp));
+        } else {
+            tvUpdateStatus.setText(R.string.update_latest);
+        }
+    }
+
+    /**
+     * 更新按钮：按当前状态决定检查 / 下载 / 安装
+     */
+    private void onUpdateClicked() {
+        if (UpdateManager.isChecking()) {
+            toast("正在检查更新，请稍候");
+            return;
+        }
+        if (UpdateManager.isDownloading()) {
+            toast("正在下载安装包，请稍候");
+            return;
+        }
+        var ready = UpdateManager.downloadedApk(this);
+        if (ready != null) {
+            confirmInstall(ready, UpdateManager.latest(this));
+            return;
+        }
+        var latest = UpdateManager.latest(this);
+        if (latest != null && UpdateManager.hasNewer(this)) {
+            if (latest.hasApk()) {
+                confirmDownload(latest);
+            } else {
+                showUpdateWithoutApk(latest);
+            }
+            return;
+        }
+        checkUpdate();
+    }
+
+    private void checkUpdate() {
+        var started = UpdateManager.check(this, new UpdateManager.CheckCallback() {
+            @Override
+            public void onSuccess(UpdateInfo latest, boolean hasUpdate) {
+                runOnUi(() -> {
+                    renderUpdateState();
+                    if (!resumed) {
+                        toast(hasUpdate ? "发现新版本 v" + latest.version : "已是最新版本");
+                        return;
+                    }
+                    if (hasUpdate) {
+                        if (latest.hasApk()) {
+                            confirmDownload(latest);
+                        } else {
+                            showUpdateWithoutApk(latest);
+                        }
+                    } else {
+                        toast("已是最新版本（v"
+                            + UpdateManager.currentVersion(TriggerSettingsActivity.this) + "）");
+                    }
+                });
+            }
+
+            @Override
+            public void onError(String message) {
+                runOnUi(() -> {
+                    renderUpdateState();
+                    toast(getString(R.string.update_check_failed, message));
+                });
+            }
+        });
+        if (!started) {
+            toast("正在检查更新，请稍候");
+            return;
+        }
+        renderUpdateState();
+    }
+
+    private void confirmDownload(UpdateInfo latest) {
+        var notes = latest.notes == null ? "" : latest.notes.trim();
+        if (notes.length() > 1200) {
+            notes = notes.substring(0, 1200) + "…";
+        }
+        if (notes.isEmpty()) {
+            notes = "该版本没有填写更新说明。";
+        }
+        var message = notes + "\n\n安装包大小：" + UpdateManager.formatSize(latest.apkSize);
+        new AlertDialog.Builder(this)
+            .setTitle(getString(R.string.update_dialog_title, latest.version))
+            .setMessage(message)
+            .setPositiveButton(R.string.update_dialog_download,
+                (dialog, which) -> startDownload(latest))
+            .setNeutralButton(R.string.update_action_page,
+                (dialog, which) -> UpdateManager.openReleasesPage(this))
+            .setNegativeButton(R.string.update_dialog_later, null)
+            .show();
+    }
+
+    private void showUpdateWithoutApk(UpdateInfo latest) {
+        new AlertDialog.Builder(this)
+            .setTitle(getString(R.string.update_dialog_title, latest.version))
+            .setMessage("该版本没有上传 APK 附件，请到发布页手动下载。")
+            .setPositiveButton(R.string.update_action_page,
+                (dialog, which) -> UpdateManager.openReleasesPage(this))
+            .setNegativeButton(R.string.update_dialog_later, null)
+            .show();
+    }
+
+    private void startDownload(UpdateInfo latest) {
+        var started = UpdateManager.download(this, latest, new UpdateManager.DownloadCallback() {
+            @Override
+            public void onProgress(int percent, long downloaded, long total) {
+                runOnUi(() -> {
+                    pbUpdate.setVisibility(View.VISIBLE);
+                    pbUpdate.setIndeterminate(percent < 0);
+                    if (percent >= 0) {
+                        pbUpdate.setProgress(percent);
+                    }
+                    tvUpdateStatus.setText(percent >= 0
+                        ? getString(R.string.update_downloading, percent,
+                            UpdateManager.formatSize(downloaded),
+                            UpdateManager.formatSize(total))
+                        : getString(R.string.update_downloading_unknown,
+                            UpdateManager.formatSize(downloaded)));
+                    btnUpdate.setEnabled(false);
+                    btnUpdate.setText(R.string.update_action_busy);
+                });
+            }
+
+            @Override
+            public void onSuccess(File apk) {
+                runOnUi(() -> {
+                    if (!resumed) {
+                        renderUpdateState();
+                        toast("新版安装包已下载完成");
+                        return;
+                    }
+                    confirmInstall(apk, latest);
+                    renderUpdateState();
+                });
+            }
+
+            @Override
+            public void onError(String message) {
+                runOnUi(() -> {
+                    renderUpdateState();
+                    toast(getString(R.string.update_download_failed, message));
+                });
+            }
+        });
+        if (!started) {
+            toast("正在下载安装包，请稍候");
+            return;
+        }
+        renderUpdateState();
+    }
+
+    private void confirmInstall(File apk, UpdateInfo latest) {
+        var version = latest == null ? "" : latest.version;
+        new AlertDialog.Builder(this)
+            .setTitle(version.isEmpty() ? getString(R.string.update_action_install)
+                : getString(R.string.update_install_title, version))
+            .setMessage(R.string.update_install_message)
+            .setPositiveButton(R.string.update_install_confirm, (dialog, which) -> {
+                if (!UpdateManager.install(this, apk)) {
+                    renderUpdateState();
+                }
+            })
+            .setNegativeButton(R.string.update_install_cancel, null)
+            .show();
+    }
+
+    /**
+     * 后台回调切回主线程，页面已销毁时直接丢弃
+     */
+    private void runOnUi(Runnable action) {
+        runOnUiThread(() -> {
+            if (isFinishing() || isDestroyed()) {
+                return;
+            }
+            action.run();
+        });
     }
 
     private void toast(String text) {
