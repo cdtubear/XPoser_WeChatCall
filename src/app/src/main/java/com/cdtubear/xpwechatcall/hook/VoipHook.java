@@ -274,16 +274,40 @@ public final class VoipHook {
         }
         IncomingCallMonitor.onResume(activity);
         if ("onResume".equals(where) && sPendingAnswer) {
-            sPendingAnswer = false;
+            // 页面刚恢复时可能还没完成布局，延迟一点再点接听键
+            schedulePendingAnswer(activity, 0);
+        }
+    }
+
+    private static void schedulePendingAnswer(Activity activity, int attempt) {
+        var handler = new Handler(Looper.getMainLooper());
+        handler.postDelayed(() -> {
+            if (!sPendingAnswer || activity.isDestroyed() || activity.isFinishing()) {
+                return;
+            }
+            var decor = activity.getWindow() == null
+                ? null : activity.getWindow().getDecorView();
+            if (decor == null || decor.getWidth() <= 0) {
+                if (attempt < 3) {
+                    schedulePendingAnswer(activity, attempt + 1);
+                }
+                return;
+            }
             var callId = IncomingCallMonitor.getCallId();
             var accepted = IncomingCallUi.accept(activity);
-            log("voip pending answer result=" + accepted + " id=" + callId);
-            if (!callId.isEmpty()) {
-                VoipReporter.reportState(activity, callId,
-                    accepted ? TriggerContract.VS_ANSWERED : TriggerContract.VS_ANSWER_FAILED,
-                    accepted ? "answered from background" : "background accept failed");
+            log("voip pending answer result=" + accepted
+                + " attempt=" + attempt + " id=" + callId);
+            if (accepted || attempt >= 3) {
+                sPendingAnswer = false;
+                if (!callId.isEmpty()) {
+                    VoipReporter.reportState(activity, callId,
+                        accepted ? TriggerContract.VS_ANSWERED : TriggerContract.VS_ANSWER_FAILED,
+                        accepted ? "answered from background" : "background accept failed");
+                }
+                return;
             }
-        }
+            schedulePendingAnswer(activity, attempt + 1);
+        }, attempt == 0 ? 600L : 600L);
     }
 
     /**
@@ -565,9 +589,10 @@ public final class VoipHook {
                 var command = VoipReporter.pollCommand(app, id);
                 if (TriggerContract.COMMAND_ANSWER.equals(command)) {
                     log("voip background answer command id=" + id);
-                    if (bringCallToFront(app)) {
-                        sPendingAnswer = true;
-                    } else {
+                    // 先置位再拉起页面，避免 onResume 比 bringCallToFront 返回更早
+                    sPendingAnswer = true;
+                    if (!bringCallToFront(app)) {
+                        sPendingAnswer = false;
                         VoipReporter.reportState(app, id,
                             TriggerContract.VS_ANSWER_FAILED, "call page unavailable");
                     }
@@ -603,19 +628,33 @@ public final class VoipHook {
             if (pending != null) {
                 pending.send();
                 log("voip open call page by notification");
+                new Handler(Looper.getMainLooper()).postDelayed(() -> {
+                    if (!sPendingAnswer) {
+                        return;
+                    }
+                    // 通知入口可能只打开了聊天页，1.5 秒还没回到通话页就直接拉起
+                    launchDirectCallPage(app);
+                }, 1_500L);
                 return true;
             }
-            // 通知式来电没有 VideoActivity 实例时，直接拉起微信通话页
-            var direct = new Intent();
-            direct.setClassName("com.tencent.mm", VIDEO_ACTIVITY);
-            direct.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-            app.startActivity(direct);
-            log("voip open call page directly");
+            launchDirectCallPage(app);
             return true;
         } catch (Throwable e) {
             log("voip bring call front failed: " + e);
         }
         return false;
+    }
+
+    private static void launchDirectCallPage(Context app) {
+        try {
+            var direct = new Intent();
+            direct.setClassName("com.tencent.mm", VIDEO_ACTIVITY);
+            direct.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            app.startActivity(direct);
+            log("voip open call page directly");
+        } catch (Throwable e) {
+            log("voip direct call page failed: " + e);
+        }
     }
 
     private static boolean isCallNotification(Object[] args) {
