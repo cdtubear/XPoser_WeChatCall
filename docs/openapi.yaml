@@ -2,7 +2,7 @@ openapi: 3.0.3
 
 info:
   title: XpWeChatCall 外部触发 API
-  version: 1.1.30
+  version: 1.1.32
   description: |
     XpWeChatCall 模块内置 HTTP 服务，用于从外部 webhook / 脚本触发微信视频或语音通话。
 
@@ -111,6 +111,7 @@ paths:
                     busy: false
                     current_request_id: ''
                     voip_announce: true
+                    voip_sound: true
                     voip_ringing: false
                     voip: null
         '401':
@@ -965,6 +966,9 @@ components:
         voip_announce:
           type: boolean
           description: 是否开启微信来电播报
+        voip_sound:
+          type: boolean
+          description: 是否开启播报声音；关闭后仍发通知但不语音播报、不响提示音，并静音微信来电铃声
         voip_ringing:
           type: boolean
           description: 当前是否有正在响铃的微信来电

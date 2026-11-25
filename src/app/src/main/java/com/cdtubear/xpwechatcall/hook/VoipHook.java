@@ -575,8 +575,9 @@ public final class VoipHook {
                 if (sCallNotifId == Integer.MIN_VALUE || ++attempts > 80) {
                     return;
                 }
-                if (IncomingCallMonitor.hasActiveSession()) {
-                    // 前台 Session 自己会轮询并点击
+                var activity = sCallActivity.get();
+                if (activity != null && !activity.isDestroyed() && !activity.isFinishing()) {
+                    // 前台 Activity 自己会轮询并点击
                     sAnswerHandler.postDelayed(this, 700L);
                     return;
                 }

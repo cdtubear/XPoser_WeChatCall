@@ -82,6 +82,11 @@ public final class VoipAnnouncer {
         var app = context.getApplicationContext();
         var video = TriggerContract.CALL_VIDEO.equals(type);
         showNotification(app, name, video);
+        if (!TriggerContract.voipSound(app)) {
+            LogHelp.i(TAG, "voip sound disabled, notification only, mute wechat ring");
+            muteWeChatRing(app);
+            return;
+        }
         var text = buildText(name, video);
         var repeat = buildRepeat(video);
         MAIN.post(() -> startLoop(app, text, repeat));
@@ -92,6 +97,10 @@ public final class VoipAnnouncer {
      */
     private static void startLoop(Context app, String text, String repeat) {
         stopLoop();
+        if (!TriggerContract.voipSound(app)) {
+            LogHelp.i(TAG, "sound disabled, skip loop");
+            return;
+        }
         sLoopText = text;
         sLoopRepeat = repeat;
         sLooping = true;
@@ -214,6 +223,28 @@ public final class VoipAnnouncer {
     }
 
     /**
+     * 只停止播报和提示音，保留来电通知；用于「播报声音」开关关闭
+     */
+    public static void silence(Context context) {
+        MAIN.post(() -> {
+            var wasLooping = sLooping;
+            stopLoop();
+            if (sTts != null) {
+                try {
+                    sTts.stop();
+                } catch (Throwable ignored) {
+                    // 忽略
+                }
+            }
+            // 只在来电响铃期间关闭声音时立刻静音微信铃声；平时切开关不改变系统铃声
+            if (wasLooping && !TriggerContract.voipSound(context)) {
+                muteWeChatRing(context);
+            }
+            LogHelp.i(TAG, "voip sound silenced");
+        });
+    }
+
+    /**
      * 接听 / 挂断 / 结束后停止播报并撤掉通知
      */
     public static void stop(Context context) {
@@ -292,6 +323,25 @@ public final class VoipAnnouncer {
         }
     }
 
+    /**
+     * 声音开关关闭时，连微信自己的来电铃声也静音；结束通话后恢复最大铃声
+     */
+    private static void muteWeChatRing(Context app) {
+        try {
+            if (sAudio == null) {
+                sAudio = (AudioManager) app.getSystemService(Context.AUDIO_SERVICE);
+            }
+            if (sAudio == null) {
+                return;
+            }
+            sAudio.setStreamVolume(AudioManager.STREAM_RING, 0, 0);
+            LogHelp.i(TAG, "ring muted by sound switch");
+            MAIN.postDelayed(VoipAnnouncer::restoreOriginalRing, 90_000L);
+        } catch (Throwable e) {
+            LogHelp.w(TAG, "mute ring failed: " + e.getMessage());
+        }
+    }
+
     private static void duckRing() {
         if (sAudio == null) {
             return;
@@ -335,6 +385,10 @@ public final class VoipAnnouncer {
      */
     private static void speak(Context app, String text, String repeat,
                               boolean notifyFailure) {
+        if (app == null || !TriggerContract.voipSound(app)) {
+            LogHelp.i(TAG, "speak skipped, sound disabled");
+            return;
+        }
         sPendingText = text;
         sPendingRepeat = repeat;
         if (notifyFailure) {

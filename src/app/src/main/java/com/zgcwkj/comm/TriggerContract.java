@@ -108,6 +108,8 @@ public final class TriggerContract {
 
     /** 微信来电播报 */
     public static final String K_VOIP_ANNOUNCE = "voip_announce";
+    /** 微信来电播报声音：关闭后仍发通知，但不播报、不响提示音 */
+    public static final String K_VOIP_SOUND = "voip_sound";
 
     /** 蓝牙触发配置 */
     public static final String K_BT_ENABLED = "bt_enabled";
@@ -121,6 +123,7 @@ public final class TriggerContract {
     public static final int DEF_TIMEOUT = 30;
     public static final boolean DEF_BT_ENABLED = false;
     public static final boolean DEF_VOIP_ANNOUNCE = true;
+    public static final boolean DEF_VOIP_SOUND = true;
 
     private TriggerContract() {
     }
@@ -151,6 +154,14 @@ public final class TriggerContract {
 
     public static void setVoipAnnounce(Context context, boolean enabled) {
         prefs(context).edit().putBoolean(K_VOIP_ANNOUNCE, enabled).commit();
+    }
+
+    public static boolean voipSound(Context context) {
+        return prefs(context).getBoolean(K_VOIP_SOUND, DEF_VOIP_SOUND);
+    }
+
+    public static void setVoipSound(Context context, boolean enabled) {
+        prefs(context).edit().putBoolean(K_VOIP_SOUND, enabled).commit();
     }
 
     public static String bind(Context context) {

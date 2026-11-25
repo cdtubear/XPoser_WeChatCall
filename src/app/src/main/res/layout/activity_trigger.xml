@@ -339,6 +339,16 @@
                     style="@style/SwitchRow"
                     android:text="来电时播报联系人名字" />
 
+                <Switch
+                    android:id="@+id/sw_voip_sound"
+                    style="@style/SwitchRow"
+                    android:text="播报声音" />
+
+                <TextView
+                    style="@style/Hint"
+                    android:layout_marginTop="4dp"
+                    android:text="关闭「播报声音」后仍会发来电通知、仍可接听，但不会语音播报、没有提示音，微信来电铃声也会完全静音；通话结束后自动恢复铃声。" />
+
                 <TextView
                     android:id="@+id/tv_voip_status"
                     android:layout_width="match_parent"

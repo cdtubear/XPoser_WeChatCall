@@ -72,6 +72,7 @@ public class TriggerSettingsActivity extends Activity {
     private Switch swWatchdog;
     private Switch swBt;
     private Switch swVoipAnnounce;
+    private Switch swVoipSound;
     private TextView tvVoipStatus;
     private TextView tvStatus;
     private TextView tvToken;
@@ -129,6 +130,7 @@ public class TriggerSettingsActivity extends Activity {
         swEnable.setChecked(TriggerContract.isEnabled(this));
         swBt.setChecked(TriggerContract.isBtEnabled(this));
         swVoipAnnounce.setChecked(TriggerContract.voipAnnounce(this));
+        swVoipSound.setChecked(TriggerContract.voipSound(this));
         syncingUi = false;
         updateStatus();
         updateBtStatus();
@@ -154,6 +156,7 @@ public class TriggerSettingsActivity extends Activity {
         swWatchdog = findViewById(R.id.sw_watchdog);
         swBt = findViewById(R.id.sw_bt);
         swVoipAnnounce = findViewById(R.id.sw_voip_announce);
+        swVoipSound = findViewById(R.id.sw_voip_sound);
         tvVoipStatus = findViewById(R.id.tv_voip_status);
         tvStatus = findViewById(R.id.tv_status);
         tvToken = findViewById(R.id.tv_token);
@@ -247,6 +250,8 @@ public class TriggerSettingsActivity extends Activity {
         swEnable.setChecked(TriggerContract.isEnabled(this));
         swUnlock.setChecked(TriggerContract.autoUnlock(this));
         swBt.setChecked(TriggerContract.isBtEnabled(this));
+        swVoipAnnounce.setChecked(TriggerContract.voipAnnounce(this));
+        swVoipSound.setChecked(TriggerContract.voipSound(this));
         tvToken.setText(TriggerContract.token(this));
         etBind.setText(TriggerContract.bind(this));
         etPort.setText(String.valueOf(TriggerContract.port(this)));
@@ -280,6 +285,10 @@ public class TriggerSettingsActivity extends Activity {
                 toast("请先打开来电播报开关");
                 return;
             }
+            if (!TriggerContract.voipSound(this)) {
+                toast("播报声音已关闭，请先打开声音开关");
+                return;
+            }
             VoipAnnouncer.preview(this);
             toast("正在试听播报");
         });
@@ -292,6 +301,16 @@ public class TriggerSettingsActivity extends Activity {
                 requestRuntimePermissions(false);
             } else {
                 VoipAnnouncer.stop(this);
+            }
+            renderVoipStatus();
+        });
+        swVoipSound.setOnCheckedChangeListener((buttonView, isChecked) -> {
+            if (syncingUi) {
+                return;
+            }
+            TriggerContract.setVoipSound(this, isChecked);
+            if (!isChecked) {
+                VoipAnnouncer.silence(this);
             }
             renderVoipStatus();
         });
@@ -905,9 +924,10 @@ public class TriggerSettingsActivity extends Activity {
                 .format(new Date(updated))
             : "";
         tvVoipStatus.setText(String.format(Locale.ROOT,
-            "最近来电：%s（%s）\n状态：%s  %s\n播报：%s",
+            "最近来电：%s（%s）\n状态：%s  %s\n播报：%s  声音：%s",
             name, video ? "视频" : "语音", stateText, time,
-            TriggerContract.voipAnnounce(this) ? "已开启" : "已关闭"));
+            TriggerContract.voipAnnounce(this) ? "已开启" : "已关闭",
+            TriggerContract.voipSound(this) ? "已开启" : "已关闭"));
     }
 
     private void renderUpdateState() {

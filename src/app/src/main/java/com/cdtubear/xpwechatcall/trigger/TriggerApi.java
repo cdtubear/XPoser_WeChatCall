@@ -270,6 +270,7 @@ public final class TriggerApi {
             response.put("auto_unlock", TriggerContract.autoUnlock(context));
             response.put("timeout_sec", TriggerContract.timeoutSec(context));
             response.put("voip_announce", TriggerContract.voipAnnounce(context));
+            response.put("voip_sound", TriggerContract.voipSound(context));
             var voip = VoipStore.current(context);
             response.put("voip_ringing", voip != null
                 && TriggerContract.VS_RINGING.equals(voip.optString("state", "")));
