@@ -969,6 +969,7 @@ components:
           type: boolean
           description: 当前是否有正在响铃的微信来电
         voip:
+          type: object
           nullable: true
           allOf:
             - $ref: '#/components/schemas/VoipIncoming'
@@ -1064,6 +1065,7 @@ components:
           type: string
           description: 与 `incoming.state` 一致，没有记录时为空串
         incoming:
+          type: object
           nullable: true
           allOf:
             - $ref: '#/components/schemas/VoipIncoming'
@@ -1092,6 +1094,7 @@ components:
         source:
           type: string
           enum: [ http, bt ]
+    ErrorResponse:
       type: object
       required: [ ok, error, message ]
       properties:
