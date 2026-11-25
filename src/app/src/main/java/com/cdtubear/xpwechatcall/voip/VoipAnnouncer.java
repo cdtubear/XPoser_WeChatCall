@@ -60,6 +60,7 @@ public final class VoipAnnouncer {
     private static String sLoopText;
     private static String sLoopRepeat;
     private static Runnable sLoopTask;
+    private static Runnable sRoundTimeout;
 
     /** 候选引擎：第一个为系统默认引擎（null），后面是设备上可用的 TTS 引擎包名 */
     private static final java.util.List<String> CANDIDATES = new java.util.ArrayList<>();
@@ -94,14 +95,6 @@ public final class VoipAnnouncer {
         sLooping = true;
         saveAndMaxRing(app);
         playOneRound(app);
-        sLoopTask = () -> {
-            if (!sLooping) {
-                return;
-            }
-            playOneRound(app);
-            MAIN.postDelayed(sLoopTask, 10_000L);
-        };
-        MAIN.postDelayed(sLoopTask, 10_000L);
     }
 
     private static void playOneRound(Context app) {
@@ -115,6 +108,43 @@ public final class VoipAnnouncer {
                 speak(app, sLoopText, sLoopRepeat, false);
             }
         }, 500);
+        if (sRoundTimeout != null) {
+            MAIN.removeCallbacks(sRoundTimeout);
+        }
+        // 兜底：TTS 引擎不回调 onDone 时，18 秒后强制结束本轮，留出铃声间隙
+        sRoundTimeout = () -> {
+            if (!sLooping) {
+                return;
+            }
+            LogHelp.w(TAG, "tts round timeout, force gap");
+            try {
+                if (sTts != null) {
+                    sTts.stop();
+                }
+            } catch (Throwable ignored) {
+                // 忽略
+            }
+            restoreMaxRing();
+            scheduleNextRound(app, 3_000L);
+        };
+        MAIN.postDelayed(sRoundTimeout, 18_000L);
+    }
+
+    private static void scheduleNextRound(Context app, long delayMs) {
+        if (!sLooping) {
+            return;
+        }
+        if (sLoopTask != null) {
+            MAIN.removeCallbacks(sLoopTask);
+        }
+        sLoopTask = () -> {
+            if (!sLooping) {
+                return;
+            }
+            sLoopTask = null;
+            playOneRound(app);
+        };
+        MAIN.postDelayed(sLoopTask, delayMs);
     }
 
     private static void stopLoop() {
@@ -122,6 +152,10 @@ public final class VoipAnnouncer {
         if (sLoopTask != null) {
             MAIN.removeCallbacks(sLoopTask);
             sLoopTask = null;
+        }
+        if (sRoundTimeout != null) {
+            MAIN.removeCallbacks(sRoundTimeout);
+            sRoundTimeout = null;
         }
     }
 
@@ -365,14 +399,31 @@ public final class VoipAnnouncer {
 
                 @Override
                 public void onDone(String utteranceId) {
-                    if ("xp-voip-2".equals(utteranceId)) {
-                        MAIN.post(VoipAnnouncer::restoreMaxRing);
-                    }
+                    MAIN.post(() -> {
+                        if (sRoundTimeout != null) {
+                            MAIN.removeCallbacks(sRoundTimeout);
+                            sRoundTimeout = null;
+                        }
+                        restoreMaxRing();
+                        if (sLooping && "xp-voip-2".equals(utteranceId)) {
+                            // 说完后留 3 秒铃声间隙，再播下一轮
+                            scheduleNextRound(sApp, 3_000L);
+                        }
+                    });
                 }
 
                 @Override
                 public void onError(String utteranceId) {
-                    MAIN.post(VoipAnnouncer::restoreMaxRing);
+                    MAIN.post(() -> {
+                        if (sRoundTimeout != null) {
+                            MAIN.removeCallbacks(sRoundTimeout);
+                            sRoundTimeout = null;
+                        }
+                        restoreMaxRing();
+                        if (sLooping) {
+                            scheduleNextRound(sApp, 3_000L);
+                        }
+                    });
                 }
             });
         } catch (Throwable e) {

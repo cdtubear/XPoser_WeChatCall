@@ -1,8 +1,12 @@
 package com.cdtubear.xpwechatcall.hook;
 
 import android.app.Activity;
+import android.app.AndroidAppHelper;
+import android.app.Notification;
+import android.app.NotificationManager;
 import android.content.Context;
 import android.content.Intent;
+import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
 
@@ -57,6 +61,7 @@ public final class VoipHook {
             (activity, param) -> IncomingCallMonitor.onDestroy(activity));
         log("hooked " + VIDEO_ACTIVITY);
         hookCallStart(loader);
+        hookNotifications();
         // 进程启动/冷启动接电话时，Activity 可能已经 resume 完，补扫一次当前实例
         scanCurrentActivities(loader);
     }
@@ -136,7 +141,7 @@ public final class VoipHook {
                                       Class<?>[] parameterTypes,
                                       LifecycleAction action) {
         try {
-            var method = XposedHelpers.findMethodExactIfExists(clazz, name, parameterTypes);
+            var method = findExactMethod(clazz, name, parameterTypes);
             if (method == null) {
                 log("voip hook missing: " + name);
                 return;
@@ -153,6 +158,19 @@ public final class VoipHook {
         }
     }
 
+    private static java.lang.reflect.Method findExactMethod(Class<?> clazz, String name,
+                                                            Class<?>[] parameterTypes) {
+        for (var type = clazz; type != null; type = type.getSuperclass()) {
+            for (var method : type.getDeclaredMethods()) {
+                if (method.getName().equals(name)
+                    && java.util.Arrays.equals(method.getParameterTypes(), parameterTypes)) {
+                    return method;
+                }
+            }
+        }
+        return null;
+    }
+
     private static void dispatch(Activity activity, String where) {
         if (activity == null) {
             return;
@@ -167,6 +185,112 @@ public final class VoipHook {
     /**
      * 打印启动 Intent 的 extra key，便于确认微信用哪个字段区分来/去电
      */
+    /**
+     * 微信来电通知（包括非全屏、只在通知栏提示的情况）
+     *
+     * 通知标题通常就是联系人名，正文是「邀请你视频通话」，
+     * 这条比 VideoActivity 早，也覆盖了不打开全屏界面的来电。
+     */
+    private static void hookNotifications() {
+        try {
+            XposedBridge.hookAllMethods(NotificationManager.class, "notify",
+                new XC_MethodHook() {
+                    @Override
+                    protected void afterHookedMethod(MethodHookParam param) {
+                        try {
+                            Notification notification = null;
+                            for (var arg : param.args) {
+                                if (arg instanceof Notification) {
+                                    notification = (Notification) arg;
+                                    break;
+                                }
+                            }
+                            if (notification != null) {
+                                handleNotification(notification);
+                            }
+                        } catch (Throwable e) {
+                            log("notification parse failed: " + e);
+                        }
+                    }
+                });
+            log("hooked wechat notifications");
+        } catch (Throwable e) {
+            log("notification hook skipped: " + e);
+        }
+    }
+
+    private static void handleNotification(Notification notification) {
+        var extras = notification.extras;
+        if (extras == null) {
+            return;
+        }
+        var title = textOf(extras.getCharSequence(Notification.EXTRA_TITLE));
+        var bigTitle = textOf(extras.getCharSequence(Notification.EXTRA_TITLE_BIG));
+        var text = textOf(extras.getCharSequence(Notification.EXTRA_TEXT));
+        var bigText = textOf(extras.getCharSequence(Notification.EXTRA_BIG_TEXT));
+        var sub = textOf(extras.getCharSequence(Notification.EXTRA_SUB_TEXT));
+        var info = textOf(extras.getCharSequence(Notification.EXTRA_INFO_TEXT));
+        var all = title + " | " + bigTitle + " | " + text + " | " + bigText
+            + " | " + sub + " | " + info;
+        var callLike = notification.category == Notification.CATEGORY_CALL
+            || (all.contains("邀请你")
+                && (all.contains("视频通话") || all.contains("语音通话")));
+        if (!callLike || all.contains("通话中") || all.contains("已接通")
+            || all.contains("正在通话")) {
+            return;
+        }
+        var name = pickNotificationName(title, bigTitle, text, bigText, sub, info);
+        var video = all.contains("视频");
+        log("wechat call notification name=" + name + " video=" + video
+            + " :: " + all);
+        if (name.isEmpty()) {
+            return;
+        }
+        IncomingCallMonitor.noteNotificationIncoming(
+            AndroidAppHelper.currentApplication(), name, video);
+    }
+
+    private static String textOf(CharSequence value) {
+        return value == null ? "" : value.toString().trim();
+    }
+
+    private static String pickNotificationName(String title, String bigTitle,
+                                               String text, String bigText,
+                                               String sub, String info) {
+        for (var value : new String[]{text, bigText, sub, info}) {
+            var at = value.indexOf("邀请你");
+            if (at > 0) {
+                return clean(value.substring(0, at));
+            }
+        }
+        for (var value : new String[]{title, bigTitle}) {
+            var cleaned = clean(value);
+            if (!cleaned.isEmpty() && !cleaned.contains("通话")
+                && !cleaned.equals("微信")) {
+                return cleaned;
+            }
+        }
+        for (var value : new String[]{text, bigText, sub, info}) {
+            var cleaned = clean(value);
+            if (!cleaned.isEmpty() && !cleaned.contains("通话")
+                && !cleaned.contains("邀请")) {
+                return cleaned;
+            }
+        }
+        return "";
+    }
+
+    private static String clean(String value) {
+        if (value == null) {
+            return "";
+        }
+        var cleaned = value.replace("微信", "").replace("视频", "")
+            .replace("语音", "").replace("邀请你", "")
+            .replace("通话", "").replace("：", "").replace(":", "")
+            .trim();
+        return cleaned.length() > 20 ? "" : cleaned;
+    }
+
     private static void retryRingUser(Object mgr, boolean video, int attempt) {
         new Handler(Looper.getMainLooper()).postDelayed(() -> {
             try {

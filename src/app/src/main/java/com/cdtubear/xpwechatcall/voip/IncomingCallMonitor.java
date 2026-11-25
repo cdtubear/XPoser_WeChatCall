@@ -54,8 +54,33 @@ public final class IncomingCallMonitor {
     private static volatile boolean sNativeVideo;
     private static volatile long sNativeAt;
     private static volatile boolean sNativeUsed;
+    private static volatile String sNativeCallId = "";
 
     private IncomingCallMonitor() {
+    }
+
+    /**
+     * 微信来电通知：即使没有打开全屏通话界面，也能拿到联系人和类型并立即播报
+     */
+    public static void noteNotificationIncoming(android.content.Context context,
+                                                String name, boolean video) {
+        var now = System.currentTimeMillis();
+        if (!sNativeUsed && !sNativeCallId.isEmpty()
+            && sNativeAt > 0 && now - sNativeAt < 5_000L) {
+            return;
+        }
+        sNativeName = name == null ? "" : name.trim();
+        sNativeVideo = video;
+        sNativeAt = now;
+        sNativeUsed = false;
+        sNativeCallId = "voip_notif_" + now + "_"
+            + Integer.toHexString(sNativeName.hashCode());
+        LogHelp.i(TAG, "voip notification incoming name=" + sNativeName
+            + " video=" + video + " id=" + sNativeCallId);
+        if (context != null) {
+            VoipReporter.reportIncoming(context, sNativeCallId,
+                sNativeName, video, now);
+        }
     }
 
     /**
@@ -164,8 +189,10 @@ public final class IncomingCallMonitor {
         if (!info.fromText) {
             sNativeUsed = true;
         }
-        var session = new Session(newCallId(), info.name, info.video, info.fromText,
+        var sessionId = sNativeCallId.isEmpty() ? newCallId() : sNativeCallId;
+        var session = new Session(sessionId, info.name, info.video, info.fromText,
             System.currentTimeMillis());
+        sNativeCallId = "";
         put(activity, session);
         LogHelp.i(TAG, "voip detected phase=" + phase + " name=" + session.name
             + " video=" + session.video);
