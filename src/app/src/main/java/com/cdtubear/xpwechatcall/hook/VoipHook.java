@@ -426,6 +426,7 @@ public final class VoipHook {
                         if (found) {
                             seen = true;
                             absent = 0;
+                            IncomingCallMonitor.setCallAlive(true);
                             if (++keepAlive % 5 == 0) {
                                 // 每 10 秒给播报续命一次，响铃多久就循环多久
                                 IncomingCallMonitor.noteCallAlive(app);

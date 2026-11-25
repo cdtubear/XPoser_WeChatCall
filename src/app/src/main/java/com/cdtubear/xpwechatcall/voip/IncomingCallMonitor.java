@@ -55,8 +55,18 @@ public final class IncomingCallMonitor {
     private static volatile long sNativeAt;
     private static volatile boolean sNativeUsed;
     private static volatile String sNativeCallId = "";
+    /** 来电通知是否还在，最小化/锁屏导致 Activity 销毁时用它区分“通话还在” */
+    private static volatile boolean sCallAlive;
 
     private IncomingCallMonitor() {
+    }
+
+    public static void setCallAlive(boolean alive) {
+        sCallAlive = alive;
+    }
+
+    public static boolean isCallAlive() {
+        return sCallAlive;
     }
 
     /**
@@ -65,6 +75,7 @@ public final class IncomingCallMonitor {
      */
     public static void noteCallGone(android.content.Context context) {
         var hadCall = sNativeAt > 0 || !sNativeCallId.isEmpty();
+        sCallAlive = false;
         var notifId = sNativeCallId;
         sNativeCallId = "";
         sNativeAt = 0;
@@ -227,6 +238,10 @@ public final class IncomingCallMonitor {
         var session = get(activity);
         if (session == null) {
             LogHelp.i(TAG, "voip activity destroyed without session");
+            if (sCallAlive) {
+                // 只是窗口被最小化/锁屏，来电通知还在，保留本轮通话
+                return;
+            }
             // 锁屏/通知式来电可能没有 session，这里也要清掉上一通的 call_id，
             // 否则同一联系人 45 秒内再打进来会被当成重复通知而不播报
             sNativeCallId = "";
@@ -235,16 +250,18 @@ public final class IncomingCallMonitor {
             return;
         }
         session.destroyed = true;
-        if (!session.reported) {
+        if (!session.reported && !sCallAlive) {
             var state = session.accepted
                 ? TriggerContract.VS_ANSWERED : TriggerContract.VS_MISSED;
             finish(activity, session, state, "call activity destroyed");
         }
         remove(activity);
-        // 通话页结束，清掉本轮通知 call_id，下一通重新生成
-        sNativeCallId = "";
-        sNativeAt = 0;
-        sNativeUsed = true;
+        if (!sCallAlive) {
+            // 通话页结束，清掉本轮通知 call_id，下一通重新生成
+            sNativeCallId = "";
+            sNativeAt = 0;
+            sNativeUsed = true;
+        }
     }
 
     /**
