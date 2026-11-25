@@ -178,6 +178,8 @@ public final class VoipHook {
     /** 当前微信来电通知的 id/tag，用于识别通知被取消（挂断/对方取消） */
     private static volatile int sCallNotifId = Integer.MIN_VALUE;
     private static volatile String sCallNotifTag;
+    private static Handler sWatchHandler;
+    private static Runnable sWatchTask;
 
     /**
      * 打印微信 VoipMgr 单例的字符串/布尔字段，定位来电人到底存在哪个字段
@@ -330,10 +332,63 @@ public final class VoipHook {
             if (notification != null && handleNotification(notification, true)) {
                 sCallNotifId = id;
                 sCallNotifTag = tag;
+                startNotificationWatch();
             }
         } catch (Throwable e) {
             log("notification parse failed: " + e);
         }
+    }
+
+    /**
+     * 轮询来电通知是否还在：微信挂断/取消后不一定会调 cancel，
+     * 通知从通知栏消失是最可靠的结束信号。
+     */
+    private static void startNotificationWatch() {
+        if (sWatchHandler == null) {
+            sWatchHandler = new Handler(Looper.getMainLooper());
+        }
+        if (sWatchTask != null) {
+            sWatchHandler.removeCallbacks(sWatchTask);
+        }
+        sWatchTask = new Runnable() {
+            private int attempts;
+
+            @Override
+            public void run() {
+                if (sCallNotifId == Integer.MIN_VALUE) {
+                    return;
+                }
+                try {
+                    var app = AndroidAppHelper.currentApplication();
+                    if (app != null) {
+                        var manager = (NotificationManager) app
+                            .getSystemService(Context.NOTIFICATION_SERVICE);
+                        var found = false;
+                        for (var sbn : manager.getActiveNotifications()) {
+                            if (sbn.getId() == sCallNotifId
+                                && (sCallNotifTag == null
+                                    || sCallNotifTag.equals(sbn.getTag()))) {
+                                found = true;
+                                break;
+                            }
+                        }
+                        if (!found) {
+                            LogHelp.i(TAG, "voip notification disappeared, stop");
+                            sCallNotifId = Integer.MIN_VALUE;
+                            sCallNotifTag = null;
+                            IncomingCallMonitor.noteCallGone(app);
+                            return;
+                        }
+                    }
+                } catch (Throwable e) {
+                    log("notification watch failed: " + e);
+                }
+                if (++attempts < 60) {
+                    sWatchHandler.postDelayed(this, 2_000L);
+                }
+            }
+        };
+        sWatchHandler.postDelayed(sWatchTask, 2_000L);
     }
 
     private static boolean isCallNotification(Object[] args) {

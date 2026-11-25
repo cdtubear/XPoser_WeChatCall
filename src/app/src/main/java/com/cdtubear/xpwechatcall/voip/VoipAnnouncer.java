@@ -61,6 +61,8 @@ public final class VoipAnnouncer {
     private static String sLoopRepeat;
     private static Runnable sLoopTask;
     private static Runnable sRoundTimeout;
+    /** 兜底：超过这个时间没有新的来电通知，就停止循环，避免挂断后一直播 */
+    private static Runnable sLoopDeadline;
 
     /** 候选引擎：第一个为系统默认引擎（null），后面是设备上可用的 TTS 引擎包名 */
     private static final java.util.List<String> CANDIDATES = new java.util.ArrayList<>();
@@ -94,7 +96,38 @@ public final class VoipAnnouncer {
         sLoopRepeat = repeat;
         sLooping = true;
         saveAndMaxRing(app);
+        scheduleLoopDeadline(app);
         playOneRound(app);
+    }
+
+    /** 来电仍在响铃（重复通知/界面轮询）时续命，避免误超时停止 */
+    public static void refresh(Context context) {
+        if (!sLooping || context == null) {
+            return;
+        }
+        scheduleLoopDeadline(context.getApplicationContext());
+    }
+
+    private static void scheduleLoopDeadline(Context app) {
+        if (sLoopDeadline != null) {
+            MAIN.removeCallbacks(sLoopDeadline);
+        }
+        sLoopDeadline = () -> {
+            if (!sLooping) {
+                return;
+            }
+            LogHelp.i(TAG, "loop deadline reached, stop announcing");
+            stopLoop();
+            try {
+                if (sTts != null) {
+                    sTts.stop();
+                }
+            } catch (Throwable ignored) {
+                // 忽略
+            }
+            restoreOriginalRing();
+        };
+        MAIN.postDelayed(sLoopDeadline, 40_000L);
     }
 
     private static void playOneRound(Context app) {
@@ -156,6 +189,10 @@ public final class VoipAnnouncer {
         if (sRoundTimeout != null) {
             MAIN.removeCallbacks(sRoundTimeout);
             sRoundTimeout = null;
+        }
+        if (sLoopDeadline != null) {
+            MAIN.removeCallbacks(sLoopDeadline);
+            sLoopDeadline = null;
         }
     }
 

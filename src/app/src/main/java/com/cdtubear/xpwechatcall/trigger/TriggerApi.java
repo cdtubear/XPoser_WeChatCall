@@ -337,6 +337,10 @@ public final class TriggerApi {
         TriggerContract.setLastHookReport(context, now);
         if (fresh && TriggerContract.voipAnnounce(context)) {
             VoipAnnouncer.announce(context, name, type);
+        } else if (!fresh
+            && TriggerContract.VS_RINGING.equals(VoipStore.current(context).optString("state"))) {
+            // 微信在响铃期间会重复发提醒通知，续命循环但不再重复播报
+            VoipAnnouncer.refresh(context);
         }
         return with(ok(), "data", VoipStore.current(context));
     }

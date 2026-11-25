@@ -128,11 +128,19 @@ public final class IncomingCallMonitor {
     public static void noteNotificationIncoming(android.content.Context context,
                                                 String name, boolean video) {
         var now = System.currentTimeMillis();
-        if (!sNativeUsed && !sNativeCallId.isEmpty()
-            && sNativeAt > 0 && now - sNativeAt < 5_000L) {
+        var cleanName = name == null ? "" : name.trim();
+        // 响铃期间微信会反复发提醒通知：沿用同一个 call_id，只续命不重复播报
+        if (!sNativeCallId.isEmpty() && now - sNativeAt < 120_000L
+            && sNativeName.equals(cleanName)) {
+            sNativeAt = now;
+            sNativeVideo = video;
+            if (context != null) {
+                VoipReporter.reportIncoming(context, sNativeCallId,
+                    cleanName, video, sNativeAt);
+            }
             return;
         }
-        sNativeName = name == null ? "" : name.trim();
+        sNativeName = cleanName;
         sNativeVideo = video;
         sNativeAt = now;
         sNativeUsed = false;
@@ -215,6 +223,10 @@ public final class IncomingCallMonitor {
             finish(activity, session, state, "call activity destroyed");
         }
         remove(activity);
+        // 通话页结束，清掉本轮通知 call_id，下一通重新生成
+        sNativeCallId = "";
+        sNativeAt = 0;
+        sNativeUsed = true;
     }
 
     /**
@@ -255,7 +267,6 @@ public final class IncomingCallMonitor {
         var sessionId = sNativeCallId.isEmpty() ? newCallId() : sNativeCallId;
         var session = new Session(sessionId, info.name, info.video, info.fromText,
             System.currentTimeMillis());
-        sNativeCallId = "";
         put(activity, session);
         LogHelp.i(TAG, "voip detected phase=" + phase + " name=" + session.name
             + " video=" + session.video);
