@@ -70,7 +70,8 @@ public final class IncomingCallUi {
             return null;
         }
         var nodes = collect(activity);
-        if (!hasAccept(nodes)) {
+        // 新版微信的接听按钮只有图标、没有「接听」文字，因此「邀请你视频/语音通话」也算来电
+        if (!hasAccept(nodes) && !hasInvite(nodes)) {
             return null;
         }
         var video = false;
@@ -94,7 +95,24 @@ public final class IncomingCallUi {
         if (activity == null) {
             return false;
         }
-        return hasAccept(collect(activity));
+        var nodes = collect(activity);
+        return hasAccept(nodes) || hasInvite(nodes);
+    }
+
+    /**
+     * 是否显示「邀请你视频/语音通话」文案（来电页标题）
+     */
+    private static boolean hasInvite(List<TextNode> nodes) {
+        for (var node : nodes) {
+            var text = node.text;
+            if (!text.contains("邀请你")) {
+                continue;
+            }
+            if (text.contains("视频通话") || text.contains("语音通话")) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**
@@ -125,6 +143,10 @@ public final class IncomingCallUi {
         }
         var target = findAccept(activity);
         if (target == null) {
+            // 新版微信接听按钮只有图标，按位置找右下角的大圆按钮
+            target = findAnswerByGeometry(activity);
+        }
+        if (target == null) {
             LogHelp.w(TAG, "voip accept: 接听 button not found");
             return false;
         }
@@ -138,6 +160,93 @@ public final class IncomingCallUi {
         }
         LogHelp.w(TAG, "voip accept: click failed, view=" + target.getClass().getName());
         return false;
+    }
+
+    /**
+     * 图标式接听按钮：屏幕右下区域、可点击、尺寸够大的控件
+     */
+    private static View findAnswerByGeometry(Activity activity) {
+        try {
+            var decor = activity.getWindow() == null
+                ? null : activity.getWindow().getDecorView();
+            if (decor == null || decor.getWidth() <= 0 || decor.getHeight() <= 0) {
+                return null;
+            }
+            var density = activity.getResources().getDisplayMetrics().density;
+            var minSize = (int) (56 * density);
+            var views = new ArrayList<View>();
+            for (var root : roots(activity)) {
+                collectViews(root, views);
+            }
+            View best = null;
+            var bestY = -1;
+            var width = decor.getWidth();
+            var height = decor.getHeight();
+            for (var view : views) {
+                if (!view.isShown() || !view.isClickable()) {
+                    continue;
+                }
+                var w = view.getWidth();
+                var h = view.getHeight();
+                if (w < minSize || h < minSize || w > width * 0.6f) {
+                    continue;
+                }
+                var loc = new int[2];
+                view.getLocationOnScreen(loc);
+                var cx = loc[0] + w / 2f;
+                var cy = loc[1] + h / 2f;
+                if (cx < width * 0.5f || cy < height * 0.55f) {
+                    continue;
+                }
+                var label = labelOf(view);
+                if (label.contains("翻转") || label.contains("模糊")
+                    || label.contains("摄像头") || label.contains("切换")
+                    || label.contains("静音") || label.contains("免提")) {
+                    continue;
+                }
+                if (cy > bestY || (cy == bestY && best != null
+                    && w * h > best.getWidth() * best.getHeight())) {
+                    best = view;
+                    bestY = (int) cy;
+                }
+            }
+            if (best != null) {
+                LogHelp.i(TAG, "voip accept: geometry hit " + best.getClass().getName()
+                    + " " + best.getWidth() + "x" + best.getHeight());
+            }
+            return best;
+        } catch (Throwable e) {
+            LogHelp.w(TAG, "voip accept geometry failed: " + e);
+            return null;
+        }
+    }
+
+    private static String labelOf(View view) {
+        var builder = new StringBuilder();
+        var desc = view.getContentDescription();
+        if (desc != null) {
+            builder.append(desc);
+        }
+        if (view instanceof TextView) {
+            var text = ((TextView) view).getText();
+            if (text != null) {
+                builder.append(text);
+            }
+        }
+        return builder.toString();
+    }
+
+    private static void collectViews(View view, List<View> out) {
+        if (view == null) {
+            return;
+        }
+        out.add(view);
+        if (view instanceof ViewGroup) {
+            var group = (ViewGroup) view;
+            for (var i = 0; i < group.getChildCount(); i++) {
+                collectViews(group.getChildAt(i), out);
+            }
+        }
     }
 
     /**
@@ -242,6 +351,29 @@ public final class IncomingCallUi {
             this.text = text;
             this.size = size;
             this.y = y;
+        }
+    }
+
+    /**
+     * 把当前窗口的文字拼成一行，仅用于诊断日志
+     */
+    public static String describe(Activity activity) {
+        try {
+            var nodes = collect(activity);
+            var builder = new StringBuilder();
+            for (var node : nodes) {
+                var text = node.text;
+                if (text.length() > 40) {
+                    text = text.substring(0, 40);
+                }
+                builder.append(text).append(" | ");
+                if (builder.length() > 800) {
+                    break;
+                }
+            }
+            return builder.toString();
+        } catch (Throwable e) {
+            return "error: " + e;
         }
     }
 

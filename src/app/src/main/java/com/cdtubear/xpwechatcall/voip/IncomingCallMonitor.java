@@ -79,6 +79,9 @@ public final class IncomingCallMonitor {
             return;
         }
         var existing = get(activity);
+        LogHelp.i(TAG, "voip activity resume, class=" + activity.getClass().getName()
+            + " existing=" + (existing == null ? "none"
+                : existing.done ? "done" : "monitoring"));
         if (existing != null && !existing.done) {
             return;
         }
@@ -95,6 +98,7 @@ public final class IncomingCallMonitor {
     public static void onDestroy(Activity activity) {
         var session = get(activity);
         if (session == null) {
+            LogHelp.i(TAG, "voip activity destroyed without session");
             return;
         }
         session.destroyed = true;
@@ -121,6 +125,10 @@ public final class IncomingCallMonitor {
         }
         var info = IncomingCallUi.detect(activity);
         if (info == null) {
+            if (phase == 3) {
+                LogHelp.i(TAG, "voip not ringing, nodes="
+                    + IncomingCallUi.describe(activity));
+            }
             return;
         }
         if (info.name.isEmpty() && phase < 3) {
@@ -130,7 +138,8 @@ public final class IncomingCallMonitor {
         var session = new Session(newCallId(), info.name, info.video,
             System.currentTimeMillis());
         put(activity, session);
-        LogHelp.i(TAG, "voip detected name=" + session.name + " video=" + session.video);
+        LogHelp.i(TAG, "voip detected phase=" + phase + " name=" + session.name
+            + " video=" + session.video);
         POOL.execute(() -> runSession(activity, session));
         MAIN.postDelayed(() -> watchCall(activity, session), 2000);
     }
