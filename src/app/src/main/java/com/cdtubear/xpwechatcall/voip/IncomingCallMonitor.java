@@ -69,6 +69,24 @@ public final class IncomingCallMonitor {
         return sCallAlive;
     }
 
+    /** 当前是否有一通已识别的来电（用于判断音频模式变化是不是接听） */
+    public static boolean hasCall() {
+        return !sNativeCallId.isEmpty() || hasActiveSession();
+    }
+
+    /**
+     * 微信把音频模式切到通话模式，说明已经接听：立即上报 ANSWERED 停止播报，
+     * 避免接听后进入 7 秒间隙，挂断时又补播一轮。
+     */
+    public static void noteAnswered(android.content.Context context) {
+        if (context == null || sNativeCallId.isEmpty()) {
+            return;
+        }
+        LogHelp.i(TAG, "voip answered by audio mode id=" + sNativeCallId);
+        VoipReporter.reportState(context, sNativeCallId,
+            TriggerContract.VS_ANSWERED, "audio mode in call");
+    }
+
     /**
      * 微信撤掉来电通知：对方取消、本方挂断、或接听后通知被替换
      * 立即结束播报，避免电话已经没了还在循环。

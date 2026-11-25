@@ -7,6 +7,7 @@ import android.app.NotificationManager;
 import android.app.Service;
 import android.content.Context;
 import android.content.Intent;
+import android.media.AudioManager;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
@@ -65,6 +66,7 @@ public final class VoipHook {
         log("hooked " + VIDEO_ACTIVITY);
         hookCallStart(loader);
         hookNotifications();
+        hookAudioMode();
         // 进程启动/冷启动接电话时，Activity 可能已经 resume 完，补扫一次当前实例
         scanCurrentActivities(loader);
     }
@@ -265,6 +267,33 @@ public final class VoipHook {
      * 通知标题通常就是联系人名，正文是「邀请你视频通话」，
      * 这条比 VideoActivity 早，也覆盖了不打开全屏界面的来电。
      */
+    /**
+     * 接听后微信会把音频模式切到 MODE_IN_COMMUNICATION，
+     * 用它作为“已接听”的可靠信号，立即停止循环播报。
+     */
+    private static void hookAudioMode() {
+        try {
+            XposedBridge.hookAllMethods(AudioManager.class, "setMode",
+                new XC_MethodHook() {
+                    @Override
+                    protected void afterHookedMethod(MethodHookParam param) {
+                        if (param.args.length == 0 || !(param.args[0] instanceof Integer)) {
+                            return;
+                        }
+                        var mode = (Integer) param.args[0];
+                        if (mode == AudioManager.MODE_IN_COMMUNICATION
+                            && IncomingCallMonitor.hasCall()) {
+                            IncomingCallMonitor.noteAnswered(
+                                AndroidAppHelper.currentApplication());
+                        }
+                    }
+                });
+            log("hooked audio mode");
+        } catch (Throwable e) {
+            log("audio mode hook skipped: " + e);
+        }
+    }
+
     private static void hookNotifications() {
         try {
             XposedBridge.hookAllMethods(NotificationManager.class, "notify",
