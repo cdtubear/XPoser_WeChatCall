@@ -326,14 +326,31 @@ public final class VoipHook {
                 new XC_MethodHook() {
                     @Override
                     protected void afterHookedMethod(MethodHookParam param) {
-                        if (sCallNotifId != Integer.MIN_VALUE) {
-                            sCallNotifId = Integer.MIN_VALUE;
-                            sCallNotifTag = null;
-                            IncomingCallMonitor.noteCallGone(
-                                AndroidAppHelper.currentApplication());
-                        }
+                        log("service stopForeground "
+                            + param.thisObject.getClass().getName());
+                        // 最小化时微信也会 stopForeground，这里只记录，不当作挂断
                     }
                 });
+            for (var method : new String[]{"stopSelf", "stopSelfResult"}) {
+                XposedBridge.hookAllMethods(Service.class, method,
+                    new XC_MethodHook() {
+                        @Override
+                        protected void afterHookedMethod(MethodHookParam param) {
+                            var cls = param.thisObject.getClass().getName();
+                            log("service " + method + " " + cls);
+                            if (sCallNotifId == Integer.MIN_VALUE) {
+                                return;
+                            }
+                            var lower = cls.toLowerCase();
+                            if (lower.contains("voip") || lower.contains("call")) {
+                                sCallNotifId = Integer.MIN_VALUE;
+                                sCallNotifTag = null;
+                                IncomingCallMonitor.noteCallGone(
+                                    AndroidAppHelper.currentApplication());
+                            }
+                        }
+                    });
+            }
             log("hooked wechat notifications");
         } catch (Throwable e) {
             log("notification hook skipped: " + e);

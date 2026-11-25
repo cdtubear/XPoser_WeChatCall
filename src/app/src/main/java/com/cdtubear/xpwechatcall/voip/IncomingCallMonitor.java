@@ -250,10 +250,10 @@ public final class IncomingCallMonitor {
             return;
         }
         session.destroyed = true;
-        if (!session.reported && !sCallAlive) {
-            var state = session.accepted
-                ? TriggerContract.VS_ANSWERED : TriggerContract.VS_MISSED;
-            finish(activity, session, state, "call activity destroyed");
+        if (!session.reported) {
+            // 通话页销毁不等于挂断：最小化/锁屏也会销毁。真正的结束由
+            // VoipService.stopSelf / 通知撤销来判定，这里不再直接停播报。
+            LogHelp.i(TAG, "voip activity destroyed, wait for call end signal");
         }
         remove(activity);
         if (!sCallAlive) {
