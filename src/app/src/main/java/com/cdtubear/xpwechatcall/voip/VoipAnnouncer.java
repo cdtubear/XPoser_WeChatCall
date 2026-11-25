@@ -43,6 +43,11 @@ public final class VoipAnnouncer {
     private static boolean sNotifyFailure;
     private static Context sApp;
 
+    /** 候选引擎：第一个为系统默认引擎（null），后面是设备上可用的 TTS 引擎包名 */
+    private static final java.util.List<String> CANDIDATES = new java.util.ArrayList<>();
+    private static int sCandidateIndex;
+    private static boolean sCandidatesBuilt;
+
     private VoipAnnouncer() {
     }
 
@@ -65,7 +70,16 @@ public final class VoipAnnouncer {
      */
     public static void preview(Context context) {
         var app = context.getApplicationContext();
-        MAIN.post(() -> speak(app, "这是一条微信来电播报测试", true));
+        MAIN.post(() -> {
+            // 用户可能刚在系统设置里装好语音引擎，试听时允许重新探测一次
+            if (!sReady && !sInitializing && sUnavailable) {
+                sUnavailable = false;
+                sCandidateIndex = 0;
+                sCandidatesBuilt = false;
+                CANDIDATES.clear();
+            }
+            speak(app, "这是一条微信来电播报测试", true);
+        });
     }
 
     /**
@@ -99,85 +113,162 @@ public final class VoipAnnouncer {
     }
 
     /**
-     * 播报文本，TTS 不可用时静默失败，通知仍然保留
+     * 播报文本。TTS 不可用时不会影响通知，试听场景会给出提示。
      */
     private static void speak(Context app, String text, boolean notifyFailure) {
-        initTts(app);
-        if (sReady && sTts != null) {
-            try {
-                sTts.speak(text, TextToSpeech.QUEUE_FLUSH, null, "xp-voip");
-                return;
-            } catch (Throwable e) {
-                LogHelp.w(TAG, "tts speak failed: " + e.getMessage());
-            }
+        sPendingText = text;
+        if (notifyFailure) {
+            sNotifyFailure = true;
         }
-        if (!sUnavailable) {
-            // 引擎还在初始化，先记下来，就绪后补播
-            sPendingText = text;
-            if (notifyFailure) {
-                sNotifyFailure = true;
-            }
-        } else if (notifyFailure) {
-            Toast.makeText(app, "系统语音引擎不可用，请安装支持中文的 TTS",
-                Toast.LENGTH_LONG).show();
+        if (sReady && sTts != null) {
+            flushPending();
+            return;
+        }
+        if (sUnavailable) {
+            reportFailure(app);
+            return;
+        }
+        if (!sInitializing) {
+            startNextEngine(app);
         }
     }
 
-    private static void initTts(Context app) {
-        if (sReady || sUnavailable || sInitializing) {
+    private static void flushPending() {
+        var pending = sPendingText;
+        if (pending == null || sTts == null) {
             return;
         }
-        sInitializing = true;
-        sApp = app;
+        sPendingText = null;
         try {
-            sTts = new TextToSpeech(app, status -> {
-                sInitializing = false;
-                if (status != TextToSpeech.SUCCESS || sTts == null) {
-                    failTts("init failed: " + status);
-                    return;
-                }
-                var result = sTts.setLanguage(Locale.SIMPLIFIED_CHINESE);
-                if (result == TextToSpeech.LANG_MISSING_DATA
-                    || result == TextToSpeech.LANG_NOT_SUPPORTED) {
-                    result = sTts.setLanguage(Locale.CHINA);
-                }
-                if (result == TextToSpeech.LANG_MISSING_DATA
-                    || result == TextToSpeech.LANG_NOT_SUPPORTED) {
-                    failTts("chinese unavailable: " + result);
-                    return;
-                }
-                sTts.setSpeechRate(0.95f);
-                sReady = true;
-                sNotifyFailure = false;
-                LogHelp.i(TAG, "tts ready");
-                var pending = sPendingText;
-                sPendingText = null;
-                if (pending != null) {
-                    try {
-                        sTts.speak(pending, TextToSpeech.QUEUE_FLUSH, null, "xp-voip");
-                    } catch (Throwable e) {
-                        LogHelp.w(TAG, "tts pending speak failed: " + e.getMessage());
-                    }
-                }
-            });
+            sTts.speak(pending, TextToSpeech.QUEUE_FLUSH, null, "xp-voip");
         } catch (Throwable e) {
-            sInitializing = false;
-            failTts("create failed: " + e.getMessage());
+            LogHelp.w(TAG, "tts speak failed: " + e.getMessage());
         }
     }
 
     /**
-     * 标记语音引擎不可用；试听场景下提示用户，避免只看到「正在试听」却没有任何声音
+     * 依次尝试系统默认引擎和设备上其它 TTS 引擎，避免默认引擎损坏时完全不可用
+     */
+    private static void startNextEngine(Context app) {
+        sApp = app.getApplicationContext();
+        buildCandidates(sApp);
+        while (sCandidateIndex < CANDIDATES.size()) {
+            var engine = CANDIDATES.get(sCandidateIndex++);
+            try {
+                sInitializing = true;
+                if (engine == null) {
+                    sTts = new TextToSpeech(sApp, status -> onEngineInit(sApp, status));
+                } else {
+                    sTts = new TextToSpeech(sApp, status -> onEngineInit(sApp, status), engine);
+                }
+                return;
+            } catch (Throwable e) {
+                sInitializing = false;
+                sTts = null;
+                LogHelp.w(TAG, "tts create failed, engine=" + engine + ": " + e.getMessage());
+            }
+        }
+        sInitializing = false;
+        failTts("no tts engine available");
+    }
+
+    private static void onEngineInit(Context app, int status) {
+        sInitializing = false;
+        if (status != TextToSpeech.SUCCESS || sTts == null) {
+            LogHelp.w(TAG, "tts init failed, status=" + status
+                + ", try next engine");
+            closeTts();
+            startNextEngine(app);
+            return;
+        }
+        if (!applyChinese(sTts)) {
+            LogHelp.w(TAG, "tts chinese unavailable, try next engine");
+            closeTts();
+            startNextEngine(app);
+            return;
+        }
+        sTts.setSpeechRate(0.95f);
+        sReady = true;
+        sUnavailable = false;
+        sNotifyFailure = false;
+        LogHelp.i(TAG, "tts ready");
+        flushPending();
+    }
+
+    private static boolean applyChinese(TextToSpeech tts) {
+        var locales = new Locale[]{Locale.SIMPLIFIED_CHINESE, Locale.CHINA, Locale.CHINESE};
+        for (var locale : locales) {
+            int result;
+            try {
+                result = tts.setLanguage(locale);
+            } catch (Throwable e) {
+                continue;
+            }
+            if (result != TextToSpeech.LANG_MISSING_DATA
+                && result != TextToSpeech.LANG_NOT_SUPPORTED) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static void buildCandidates(Context app) {
+        if (sCandidatesBuilt) {
+            return;
+        }
+        sCandidatesBuilt = true;
+        CANDIDATES.add(null);
+        try {
+            var pm = app.getPackageManager();
+            var services = pm.queryIntentServices(
+                new Intent(TextToSpeech.Engine.INTENT_ACTION_TTS_SERVICE), 0);
+            for (var info : services) {
+                if (info.serviceInfo == null) {
+                    continue;
+                }
+                var pkg = info.serviceInfo.packageName;
+                if (pkg != null && !CANDIDATES.contains(pkg)) {
+                    CANDIDATES.add(pkg);
+                }
+            }
+        } catch (Throwable e) {
+            LogHelp.w(TAG, "query tts engines failed: " + e.getMessage());
+        }
+        LogHelp.i(TAG, "tts candidates=" + CANDIDATES);
+    }
+
+    private static void closeTts() {
+        if (sTts == null) {
+            return;
+        }
+        try {
+            sTts.stop();
+            sTts.shutdown();
+        } catch (Throwable ignored) {
+            // 忽略
+        }
+        sTts = null;
+    }
+
+    /**
+     * 所有引擎都不可用时置位，并给试听用户一个明确提示
      */
     private static void failTts(String reason) {
         sUnavailable = true;
+        sReady = false;
         sPendingText = null;
+        closeTts();
         LogHelp.w(TAG, "tts unavailable, " + reason);
-        if (sNotifyFailure && sApp != null) {
-            sNotifyFailure = false;
-            Toast.makeText(sApp, "系统语音引擎不可用，请安装支持中文的 TTS",
-                Toast.LENGTH_LONG).show();
+        reportFailure(sApp);
+    }
+
+    private static void reportFailure(Context app) {
+        if (!sNotifyFailure || app == null) {
+            return;
         }
+        sNotifyFailure = false;
+        Toast.makeText(app, "系统语音引擎不可用，请在系统设置中安装或启用中文语音引擎",
+            Toast.LENGTH_LONG).show();
     }
 
     /**
