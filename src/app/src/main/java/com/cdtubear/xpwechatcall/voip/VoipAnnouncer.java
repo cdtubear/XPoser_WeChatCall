@@ -340,6 +340,18 @@ public final class VoipAnnouncer {
         if (notifyFailure) {
             sNotifyFailure = true;
         }
+        try {
+            if (sAudio == null) {
+                sAudio = (AudioManager) app.getSystemService(Context.AUDIO_SERVICE);
+            }
+            if (sAudio != null) {
+                // 微信响铃会静音 MUSIC 流，播报改走闹钟流，保证最小化时也能听见
+                sAudio.setStreamVolume(AudioManager.STREAM_ALARM,
+                    sAudio.getStreamMaxVolume(AudioManager.STREAM_ALARM), 0);
+            }
+        } catch (Throwable ignored) {
+            // 忽略
+        }
         if (sReady && sTts != null) {
             flushPending();
             return;
@@ -365,13 +377,13 @@ public final class VoipAnnouncer {
             var params = new Bundle();
             params.putFloat(TextToSpeech.Engine.KEY_PARAM_VOLUME, 1.0f);
             params.putInt(TextToSpeech.Engine.KEY_PARAM_STREAM,
-                AudioManager.STREAM_MUSIC);
+                AudioManager.STREAM_ALARM);
             sTts.speak(pending, TextToSpeech.QUEUE_FLUSH, params, "xp-voip-1");
             if (repeat != null) {
                 var params2 = new Bundle();
                 params2.putFloat(TextToSpeech.Engine.KEY_PARAM_VOLUME, 1.0f);
                 params2.putInt(TextToSpeech.Engine.KEY_PARAM_STREAM,
-                    AudioManager.STREAM_MUSIC);
+                    AudioManager.STREAM_ALARM);
                 sTts.speak(repeat, TextToSpeech.QUEUE_ADD, params2, "xp-voip-2");
             }
         } catch (Throwable e) {
@@ -425,7 +437,7 @@ public final class VoipAnnouncer {
         sTts.setPitch(1.0f);
         try {
             sTts.setAudioAttributes(new AudioAttributes.Builder()
-                .setUsage(AudioAttributes.USAGE_ASSISTANCE_ACCESSIBILITY)
+                .setUsage(AudioAttributes.USAGE_ALARM)
                 .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
                 .build());
             sTts.setOnUtteranceProgressListener(new UtteranceProgressListener() {
