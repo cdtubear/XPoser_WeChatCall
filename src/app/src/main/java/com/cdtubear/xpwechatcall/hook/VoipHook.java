@@ -191,6 +191,7 @@ public final class VoipHook {
     private static volatile WeakReference<Activity> sCallActivity =
         new WeakReference<>(null);
     private static volatile Intent sCallIntent;
+    private static volatile android.app.PendingIntent sCallPendingIntent;
     private static volatile boolean sPendingAnswer;
     private static Handler sAnswerHandler;
 
@@ -598,6 +599,19 @@ public final class VoipHook {
                 log("voip relaunch call activity");
                 return true;
             }
+            var pending = sCallPendingIntent;
+            if (pending != null) {
+                pending.send();
+                log("voip open call page by notification");
+                return true;
+            }
+            // 通知式来电没有 VideoActivity 实例时，直接拉起微信通话页
+            var direct = new Intent();
+            direct.setClassName("com.tencent.mm", VIDEO_ACTIVITY);
+            direct.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            app.startActivity(direct);
+            log("voip open call page directly");
+            return true;
         } catch (Throwable e) {
             log("voip bring call front failed: " + e);
         }
@@ -688,6 +702,8 @@ public final class VoipHook {
             return false;
         }
         sCallName = name;
+        sCallPendingIntent = notification.contentIntent;
+        log("call notification pendingIntent=" + sCallPendingIntent);
         if (IncomingCallMonitor.hasActiveSession()) {
             IncomingCallMonitor.noteNativeName(name, video);
             // 仍然返回 true：让外层用这条通知的 id 跟踪通话是否还在
