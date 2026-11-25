@@ -309,6 +309,30 @@ public final class VoipHook {
                         }
                     }
                 });
+            XposedBridge.hookAllMethods(NotificationManager.class, "cancelAll",
+                new XC_MethodHook() {
+                    @Override
+                    protected void afterHookedMethod(MethodHookParam param) {
+                        if (sCallNotifId != Integer.MIN_VALUE) {
+                            sCallNotifId = Integer.MIN_VALUE;
+                            sCallNotifTag = null;
+                            IncomingCallMonitor.noteCallGone(
+                                AndroidAppHelper.currentApplication());
+                        }
+                    }
+                });
+            XposedBridge.hookAllMethods(Service.class, "stopForeground",
+                new XC_MethodHook() {
+                    @Override
+                    protected void afterHookedMethod(MethodHookParam param) {
+                        if (sCallNotifId != Integer.MIN_VALUE) {
+                            sCallNotifId = Integer.MIN_VALUE;
+                            sCallNotifTag = null;
+                            IncomingCallMonitor.noteCallGone(
+                                AndroidAppHelper.currentApplication());
+                        }
+                    }
+                });
             log("hooked wechat notifications");
         } catch (Throwable e) {
             log("notification hook skipped: " + e);
@@ -352,6 +376,8 @@ public final class VoipHook {
         }
         sWatchTask = new Runnable() {
             private int attempts;
+            private int absent;
+            private boolean seen;
 
             @Override
             public void run() {
@@ -364,7 +390,8 @@ public final class VoipHook {
                         var manager = (NotificationManager) app
                             .getSystemService(Context.NOTIFICATION_SERVICE);
                         var found = false;
-                        for (var sbn : manager.getActiveNotifications()) {
+                        var active = manager.getActiveNotifications();
+                        for (var sbn : active) {
                             if (sbn.getId() == sCallNotifId
                                 && (sCallNotifTag == null
                                     || sCallNotifTag.equals(sbn.getTag()))) {
@@ -372,12 +399,21 @@ public final class VoipHook {
                                 break;
                             }
                         }
-                        if (!found) {
-                            LogHelp.i(TAG, "voip notification disappeared, stop");
-                            sCallNotifId = Integer.MIN_VALUE;
-                            sCallNotifTag = null;
-                            IncomingCallMonitor.noteCallGone(app);
-                            return;
+                        if (found) {
+                            seen = true;
+                            absent = 0;
+                        } else if (seen) {
+                            // 连续 3 次（约 6 秒）都查不到才算真的消失，避免瞬时误判
+                            if (++absent >= 3) {
+                                LogHelp.i(TAG, "voip notification disappeared, stop");
+                                sCallNotifId = Integer.MIN_VALUE;
+                                sCallNotifTag = null;
+                                IncomingCallMonitor.noteCallGone(app);
+                                return;
+                            }
+                        } else {
+                            LogHelp.i(TAG, "notification watch active="
+                                + active.length + " want=" + sCallNotifId);
                         }
                     }
                 } catch (Throwable e) {
