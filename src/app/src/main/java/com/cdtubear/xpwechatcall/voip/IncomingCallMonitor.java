@@ -60,6 +60,21 @@ public final class IncomingCallMonitor {
     }
 
     /**
+     * 只补充联系人信息，不在这里触发播报（播报由通知上报或界面会话负责）
+     */
+    public static void noteNativeName(String name, boolean video) {
+        if (name == null || name.trim().isEmpty()) {
+            return;
+        }
+        sNativeName = name.trim();
+        sNativeVideo = video;
+        if (sNativeAt == 0) {
+            sNativeAt = System.currentTimeMillis();
+        }
+        LogHelp.i(TAG, "voip native name=" + sNativeName + " video=" + video);
+    }
+
+    /**
      * 微信来电通知：即使没有打开全屏通话界面，也能拿到联系人和类型并立即播报
      */
     public static void noteNotificationIncoming(android.content.Context context,

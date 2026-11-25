@@ -4,11 +4,13 @@ import android.app.Activity;
 import android.app.AndroidAppHelper;
 import android.app.Notification;
 import android.app.NotificationManager;
+import android.app.Service;
 import android.content.Context;
 import android.content.Intent;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
+import android.service.notification.StatusBarNotification;
 
 import com.zgcwkj.comm.LogHelp;
 import com.cdtubear.xpwechatcall.voip.IncomingCallMonitor;
@@ -171,6 +173,67 @@ public final class VoipHook {
         return null;
     }
 
+    private static volatile long sLastMgrDump;
+
+    /**
+     * 打印微信 VoipMgr 单例的字符串/布尔字段，定位来电人到底存在哪个字段
+     * （Flutter 界面没有文字，只能从原生对象取）
+     */
+    private static void dumpVoipMgr(ClassLoader loader) {
+        if (System.currentTimeMillis() - sLastMgrDump < 10_000L) {
+            return;
+        }
+        sLastMgrDump = System.currentTimeMillis();
+        try {
+            var mgrClass = XposedHelpers.findClass(
+                "com.tencent.mm.plugin.voip.model.d0", loader);
+            var holderClass = XposedHelpers.findClass("sy4.v", loader);
+            Object instance = null;
+            for (var field : holderClass.getDeclaredFields()) {
+                try {
+                    if (!java.lang.reflect.Modifier.isStatic(field.getModifiers())) {
+                        continue;
+                    }
+                    field.setAccessible(true);
+                    var value = field.get(null);
+                    if (value != null && mgrClass.isInstance(value)) {
+                        instance = value;
+                        break;
+                    }
+                } catch (Throwable ignored) {
+                    // 忽略
+                }
+            }
+            if (instance == null) {
+                log("voip mgr instance not found");
+                return;
+            }
+            var builder = new StringBuilder("voip mgr fields: ");
+            for (var field : mgrClass.getDeclaredFields()) {
+                try {
+                    field.setAccessible(true);
+                    var value = field.get(instance);
+                    if (value instanceof String) {
+                        var text = (String) value;
+                        if (!text.isEmpty()) {
+                            if (text.length() > 40) {
+                                text = text.substring(0, 40);
+                            }
+                            builder.append(field.getName()).append('=').append(text).append("; ");
+                        }
+                    } else if (value instanceof Boolean && (Boolean) value) {
+                        builder.append(field.getName()).append("=true; ");
+                    }
+                } catch (Throwable ignored) {
+                    // 忽略
+                }
+            }
+            log(builder.toString());
+        } catch (Throwable e) {
+            log("voip mgr dump failed: " + e);
+        }
+    }
+
     private static void dispatch(Activity activity, String where) {
         if (activity == null) {
             return;
@@ -178,6 +241,10 @@ public final class VoipHook {
         log("voip activity " + where + ": " + activity.getClass().getName());
         if ("onCreate".equals(where) || "onNewIntent".equals(where)) {
             logIntent(activity, where);
+        }
+        if ("onCreate".equals(where) || "onResume".equals(where)) {
+            scanActiveNotifications(activity);
+            dumpVoipMgr(activity.getClassLoader());
         }
         IncomingCallMonitor.onResume(activity);
     }
@@ -197,20 +264,22 @@ public final class VoipHook {
                 new XC_MethodHook() {
                     @Override
                     protected void afterHookedMethod(MethodHookParam param) {
-                        try {
-                            Notification notification = null;
-                            for (var arg : param.args) {
-                                if (arg instanceof Notification) {
-                                    notification = (Notification) arg;
-                                    break;
-                                }
-                            }
-                            if (notification != null) {
-                                handleNotification(notification);
-                            }
-                        } catch (Throwable e) {
-                            log("notification parse failed: " + e);
-                        }
+                        handleNotificationArgs(param.args);
+                    }
+                });
+            XposedBridge.hookAllMethods(NotificationManager.class, "notifyAsPackage",
+                new XC_MethodHook() {
+                    @Override
+                    protected void afterHookedMethod(MethodHookParam param) {
+                        handleNotificationArgs(param.args);
+                    }
+                });
+            // 来电常走 VoipService.startForeground，不经过 notify
+            XposedBridge.hookAllMethods(Service.class, "startForeground",
+                new XC_MethodHook() {
+                    @Override
+                    protected void afterHookedMethod(MethodHookParam param) {
+                        handleNotificationArgs(param.args);
                     }
                 });
             log("hooked wechat notifications");
@@ -219,7 +288,42 @@ public final class VoipHook {
         }
     }
 
-    private static void handleNotification(Notification notification) {
+    private static void handleNotificationArgs(Object[] args) {
+        try {
+            Notification notification = null;
+            for (var arg : args) {
+                if (arg instanceof Notification) {
+                    notification = (Notification) arg;
+                    break;
+                }
+            }
+            if (notification != null) {
+                handleNotification(notification, true);
+            }
+        } catch (Throwable e) {
+            log("notification parse failed: " + e);
+        }
+    }
+
+    /** 界面打开时补读当前活动通知，防止通知 Hook 安装晚于通知发出 */
+    private static void scanActiveNotifications(Activity activity) {
+        try {
+            var manager = (NotificationManager) activity
+                .getSystemService(Context.NOTIFICATION_SERVICE);
+            if (manager == null) {
+                return;
+            }
+            for (var sbn : manager.getActiveNotifications()) {
+                if (sbn != null) {
+                    handleNotification(sbn.getNotification(), false);
+                }
+            }
+        } catch (Throwable e) {
+            log("active notifications failed: " + e);
+        }
+    }
+
+    private static void handleNotification(Notification notification, boolean report) {
         var extras = notification.extras;
         if (extras == null) {
             return;
@@ -232,6 +336,9 @@ public final class VoipHook {
         var info = textOf(extras.getCharSequence(Notification.EXTRA_INFO_TEXT));
         var all = title + " | " + bigTitle + " | " + text + " | " + bigText
             + " | " + sub + " | " + info;
+        if (all.contains("通话") || all.contains("邀请")) {
+            log("notif probe cat=" + notification.category + " :: " + all);
+        }
         var callLike = notification.category == Notification.CATEGORY_CALL
             || (all.contains("邀请你")
                 && (all.contains("视频通话") || all.contains("语音通话")));
@@ -246,8 +353,12 @@ public final class VoipHook {
         if (name.isEmpty()) {
             return;
         }
-        IncomingCallMonitor.noteNotificationIncoming(
-            AndroidAppHelper.currentApplication(), name, video);
+        if (report) {
+            IncomingCallMonitor.noteNotificationIncoming(
+                AndroidAppHelper.currentApplication(), name, video);
+        } else {
+            IncomingCallMonitor.noteNativeName(name, video);
+        }
     }
 
     private static String textOf(CharSequence value) {

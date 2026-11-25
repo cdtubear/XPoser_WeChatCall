@@ -400,14 +400,18 @@ public final class VoipAnnouncer {
                 @Override
                 public void onDone(String utteranceId) {
                     MAIN.post(() -> {
+                        if (sLooping && "xp-voip-1".equals(utteranceId)) {
+                            // 第一句结束，第二句还在播，不能恢复铃声
+                            return;
+                        }
                         if (sRoundTimeout != null) {
                             MAIN.removeCallbacks(sRoundTimeout);
                             sRoundTimeout = null;
                         }
-                        restoreMaxRing();
+                        // 部分引擎 onDone 早于最后一段音频真正播完，留 1 秒再恢复铃声
+                        MAIN.postDelayed(VoipAnnouncer::restoreMaxRing, 1_000L);
                         if (sLooping && "xp-voip-2".equals(utteranceId)) {
-                            // 说完后留 3 秒铃声间隙，再播下一轮
-                            scheduleNextRound(sApp, 3_000L);
+                            scheduleNextRound(sApp, 4_000L);
                         }
                     });
                 }
@@ -419,9 +423,9 @@ public final class VoipAnnouncer {
                             MAIN.removeCallbacks(sRoundTimeout);
                             sRoundTimeout = null;
                         }
-                        restoreMaxRing();
+                        MAIN.postDelayed(VoipAnnouncer::restoreMaxRing, 1_000L);
                         if (sLooping) {
-                            scheduleNextRound(sApp, 3_000L);
+                            scheduleNextRound(sApp, 4_000L);
                         }
                     });
                 }
