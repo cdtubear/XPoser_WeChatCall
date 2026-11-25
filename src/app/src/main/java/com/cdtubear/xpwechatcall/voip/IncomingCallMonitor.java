@@ -125,6 +125,19 @@ public final class IncomingCallMonitor {
     /**
      * 微信来电通知：即使没有打开全屏通话界面，也能拿到联系人和类型并立即播报
      */
+    /**
+     * 通话通知还在：给模块进程续命，避免循环播报被超时停掉
+     *
+     * @param context 微信上下文
+     */
+    public static void noteCallAlive(android.content.Context context) {
+        if (context == null || sNativeCallId.isEmpty() || sNativeName.isEmpty()) {
+            return;
+        }
+        VoipReporter.reportIncoming(context, sNativeCallId, sNativeName,
+            sNativeVideo, System.currentTimeMillis());
+    }
+
     public static void noteNotificationIncoming(android.content.Context context,
                                                 String name, boolean video) {
         var now = System.currentTimeMillis();

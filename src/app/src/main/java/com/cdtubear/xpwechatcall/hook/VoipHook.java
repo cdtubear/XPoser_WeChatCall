@@ -378,6 +378,7 @@ public final class VoipHook {
             private int attempts;
             private int absent;
             private boolean seen;
+            private int keepAlive;
 
             @Override
             public void run() {
@@ -402,6 +403,10 @@ public final class VoipHook {
                         if (found) {
                             seen = true;
                             absent = 0;
+                            if (++keepAlive % 5 == 0) {
+                                // 每 10 秒给播报续命一次，响铃多久就循环多久
+                                IncomingCallMonitor.noteCallAlive(app);
+                            }
                         } else if (seen) {
                             // 连续 3 次（约 6 秒）都查不到才算真的消失，避免瞬时误判
                             if (++absent >= 3) {
@@ -512,7 +517,8 @@ public final class VoipHook {
         }
         if (IncomingCallMonitor.hasActiveSession()) {
             IncomingCallMonitor.noteNativeName(name, video);
-            return false;
+            // 仍然返回 true：让外层用这条通知的 id 跟踪通话是否还在
+            return true;
         }
         if (report) {
             IncomingCallMonitor.noteNotificationIncoming(
