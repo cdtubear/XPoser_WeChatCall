@@ -74,6 +74,10 @@ public final class IncomingCallMonitor {
         return !sNativeCallId.isEmpty() || hasActiveSession();
     }
 
+    public static String getCallId() {
+        return sNativeCallId;
+    }
+
     /**
      * 微信把音频模式切到通话模式，说明已经接听：立即上报 ANSWERED 停止播报，
      * 避免接听后进入 7 秒间隙，挂断时又补播一轮。

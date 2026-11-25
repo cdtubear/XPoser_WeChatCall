@@ -14,8 +14,12 @@ import android.os.Looper;
 import android.service.notification.StatusBarNotification;
 
 import com.zgcwkj.comm.LogHelp;
+import com.zgcwkj.comm.TriggerContract;
+import com.zgcwkj.comm.VoipReporter;
 import com.cdtubear.xpwechatcall.voip.IncomingCallMonitor;
 import com.cdtubear.xpwechatcall.voip.IncomingCallUi;
+
+import java.lang.ref.WeakReference;
 
 import de.robv.android.xposed.XC_MethodHook;
 import de.robv.android.xposed.XposedBridge;
@@ -183,6 +187,12 @@ public final class VoipHook {
     private static volatile String sCallName = "";
     private static Handler sWatchHandler;
     private static Runnable sWatchTask;
+    /** 最近一次通话 Activity / Intent，最小化后接听命令靠它把界面拉回前台 */
+    private static volatile WeakReference<Activity> sCallActivity =
+        new WeakReference<>(null);
+    private static volatile Intent sCallIntent;
+    private static volatile boolean sPendingAnswer;
+    private static Handler sAnswerHandler;
 
     /**
      * 打印微信 VoipMgr 单例的字符串/布尔字段，定位来电人到底存在哪个字段
@@ -248,7 +258,13 @@ public final class VoipHook {
             return;
         }
         log("voip activity " + where + ": " + activity.getClass().getName());
+        sCallActivity = new WeakReference<>(activity);
         if ("onCreate".equals(where) || "onNewIntent".equals(where)) {
+            try {
+                sCallIntent = new Intent(activity.getIntent());
+            } catch (Throwable ignored) {
+                // 忽略
+            }
             logIntent(activity, where);
         }
         if ("onCreate".equals(where) || "onResume".equals(where)) {
@@ -256,6 +272,17 @@ public final class VoipHook {
             dumpVoipMgr(activity.getClassLoader());
         }
         IncomingCallMonitor.onResume(activity);
+        if ("onResume".equals(where) && sPendingAnswer) {
+            sPendingAnswer = false;
+            var callId = IncomingCallMonitor.getCallId();
+            var accepted = IncomingCallUi.accept(activity);
+            log("voip pending answer result=" + accepted + " id=" + callId);
+            if (!callId.isEmpty()) {
+                VoipReporter.reportState(activity, callId,
+                    accepted ? TriggerContract.VS_ANSWERED : TriggerContract.VS_ANSWER_FAILED,
+                    accepted ? "answered from background" : "background accept failed");
+            }
+        }
     }
 
     /**
@@ -500,6 +527,81 @@ public final class VoipHook {
             }
         };
         sWatchHandler.postDelayed(sWatchTask, 2_000L);
+        startAnswerWatch();
+    }
+
+    /**
+     * 最小化/不在通话页时，Session 已经结束，没人轮询接听命令。
+     * 这里独立轮询，收到 answer 就把通话页拉回前台，在 onResume 里点绿色接听键。
+     */
+    private static void startAnswerWatch() {
+        if (sAnswerHandler == null) {
+            sAnswerHandler = new Handler(Looper.getMainLooper());
+        }
+        if (sAnswerHandler.getLooper() == null) {
+            return;
+        }
+        sAnswerHandler.removeCallbacksAndMessages(null);
+        sAnswerHandler.post(new Runnable() {
+            private int attempts;
+
+            @Override
+            public void run() {
+                if (sCallNotifId == Integer.MIN_VALUE || ++attempts > 80) {
+                    return;
+                }
+                if (IncomingCallMonitor.hasActiveSession()) {
+                    // 前台 Session 自己会轮询并点击
+                    sAnswerHandler.postDelayed(this, 700L);
+                    return;
+                }
+                var app = AndroidAppHelper.currentApplication();
+                var id = IncomingCallMonitor.getCallId();
+                if (app == null || id.isEmpty()) {
+                    sAnswerHandler.postDelayed(this, 700L);
+                    return;
+                }
+                var command = VoipReporter.pollCommand(app, id);
+                if (TriggerContract.COMMAND_ANSWER.equals(command)) {
+                    log("voip background answer command id=" + id);
+                    if (bringCallToFront(app)) {
+                        sPendingAnswer = true;
+                    } else {
+                        VoipReporter.reportState(app, id,
+                            TriggerContract.VS_ANSWER_FAILED, "call page unavailable");
+                    }
+                    return;
+                }
+                sAnswerHandler.postDelayed(this, 700L);
+            }
+        });
+    }
+
+    private static boolean bringCallToFront(Context app) {
+        try {
+            var activity = sCallActivity.get();
+            var intent = sCallIntent;
+            if (activity != null && !activity.isDestroyed() && !activity.isFinishing()) {
+                var resume = new Intent(activity.getIntent() == null
+                    ? intent : activity.getIntent());
+                resume.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK
+                    | Intent.FLAG_ACTIVITY_REORDER_TO_FRONT);
+                activity.startActivity(resume);
+                log("voip bring call activity to front");
+                return true;
+            }
+            if (intent != null) {
+                var resume = new Intent(intent);
+                resume.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK
+                    | Intent.FLAG_ACTIVITY_REORDER_TO_FRONT);
+                app.startActivity(resume);
+                log("voip relaunch call activity");
+                return true;
+            }
+        } catch (Throwable e) {
+            log("voip bring call front failed: " + e);
+        }
+        return false;
     }
 
     private static boolean isCallNotification(Object[] args) {
