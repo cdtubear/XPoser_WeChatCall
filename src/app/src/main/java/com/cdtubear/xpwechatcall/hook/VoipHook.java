@@ -175,6 +175,9 @@ public final class VoipHook {
     }
 
     private static volatile long sLastMgrDump;
+    /** 当前微信来电通知的 id/tag，用于识别通知被取消（挂断/对方取消） */
+    private static volatile int sCallNotifId = Integer.MIN_VALUE;
+    private static volatile String sCallNotifTag;
 
     /**
      * 打印微信 VoipMgr 单例的字符串/布尔字段，定位来电人到底存在哪个字段
@@ -283,6 +286,27 @@ public final class VoipHook {
                         handleNotificationArgs(param.args);
                     }
                 });
+            // 对方取消或本方挂断后，微信会撤掉来电通知，这比界面销毁更可靠
+            XposedBridge.hookAllMethods(NotificationManager.class, "cancel",
+                new XC_MethodHook() {
+                    @Override
+                    protected void afterHookedMethod(MethodHookParam param) {
+                        if (isCallNotification(param.args)) {
+                            IncomingCallMonitor.noteCallGone(
+                                AndroidAppHelper.currentApplication());
+                        }
+                    }
+                });
+            XposedBridge.hookAllMethods(NotificationManager.class, "cancelAsPackage",
+                new XC_MethodHook() {
+                    @Override
+                    protected void afterHookedMethod(MethodHookParam param) {
+                        if (isCallNotification(param.args)) {
+                            IncomingCallMonitor.noteCallGone(
+                                AndroidAppHelper.currentApplication());
+                        }
+                    }
+                });
             log("hooked wechat notifications");
         } catch (Throwable e) {
             log("notification hook skipped: " + e);
@@ -292,18 +316,43 @@ public final class VoipHook {
     private static void handleNotificationArgs(Object[] args) {
         try {
             Notification notification = null;
+            var id = Integer.MIN_VALUE;
+            String tag = null;
             for (var arg : args) {
                 if (arg instanceof Notification) {
                     notification = (Notification) arg;
-                    break;
+                } else if (arg instanceof Integer) {
+                    id = (Integer) arg;
+                } else if (arg instanceof String && tag == null) {
+                    tag = (String) arg;
                 }
             }
-            if (notification != null) {
-                handleNotification(notification, true);
+            if (notification != null && handleNotification(notification, true)) {
+                sCallNotifId = id;
+                sCallNotifTag = tag;
             }
         } catch (Throwable e) {
             log("notification parse failed: " + e);
         }
+    }
+
+    private static boolean isCallNotification(Object[] args) {
+        var id = Integer.MIN_VALUE;
+        String tag = null;
+        for (var arg : args) {
+            if (arg instanceof Integer) {
+                id = (Integer) arg;
+            } else if (arg instanceof String && tag == null) {
+                tag = (String) arg;
+            }
+        }
+        if (sCallNotifId == Integer.MIN_VALUE) {
+            return false;
+        }
+        if (id != sCallNotifId) {
+            return false;
+        }
+        return sCallNotifTag == null || tag == null || sCallNotifTag.equals(tag);
     }
 
     /** 界面打开时补读当前活动通知，防止通知 Hook 安装晚于通知发出 */
@@ -324,10 +373,10 @@ public final class VoipHook {
         }
     }
 
-    private static void handleNotification(Notification notification, boolean report) {
+    private static boolean handleNotification(Notification notification, boolean report) {
         var extras = notification.extras;
         if (extras == null) {
-            return;
+            return false;
         }
         var title = textOf(extras.getCharSequence(Notification.EXTRA_TITLE));
         var bigTitle = textOf(extras.getCharSequence(Notification.EXTRA_TITLE_BIG));
@@ -353,26 +402,26 @@ public final class VoipHook {
             || (all.contains("邀请你")
                 && (all.contains("视频通话") || all.contains("语音通话")));
         if (!callLike) {
-            return;
+            return false;
         }
         // 非通话频道的「通话中」多为聊天里的系统提示，不能当来电
         if (!voipChannel && !reminderCall && (all.contains("通话中")
             || all.contains("已接通") || all.contains("正在通话"))) {
-            return;
+            return false;
         }
         if (reminderCall && IncomingCallUi.isOutgoingRecent()) {
-            return;
+            return false;
         }
         var name = pickNotificationName(title, bigTitle, text, bigText, sub, info);
         var video = all.contains("视频");
         log("wechat call notification name=" + name + " video=" + video
             + " channel=" + channelId + " :: " + all);
         if (name.isEmpty()) {
-            return;
+            return false;
         }
         if (IncomingCallMonitor.hasActiveSession()) {
             IncomingCallMonitor.noteNativeName(name, video);
-            return;
+            return false;
         }
         if (report) {
             IncomingCallMonitor.noteNotificationIncoming(
@@ -380,6 +429,7 @@ public final class VoipHook {
         } else {
             IncomingCallMonitor.noteNativeName(name, video);
         }
+        return true;
     }
 
     private static String textOf(CharSequence value) {
@@ -514,3 +564,4 @@ public final class VoipHook {
         XposedBridge.log(TAG + ": " + message);
     }
 }
+

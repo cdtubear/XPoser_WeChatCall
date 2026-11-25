@@ -125,7 +125,7 @@ public final class VoipAnnouncer {
                 // 忽略
             }
             restoreMaxRing();
-            scheduleNextRound(app, 3_000L);
+            scheduleNextRound(app, 7_000L);
         };
         MAIN.postDelayed(sRoundTimeout, 18_000L);
     }
@@ -409,9 +409,9 @@ public final class VoipAnnouncer {
                             sRoundTimeout = null;
                         }
                         // 部分引擎 onDone 早于最后一段音频真正播完，留 1 秒再恢复铃声
-                        MAIN.postDelayed(VoipAnnouncer::restoreMaxRing, 1_000L);
+                        MAIN.postDelayed(VoipAnnouncer::restoreMaxRing, 1_500L);
                         if (sLooping && "xp-voip-2".equals(utteranceId)) {
-                            scheduleNextRound(sApp, 4_000L);
+                            scheduleNextRound(sApp, 7_000L);
                         }
                     });
                 }
@@ -423,9 +423,9 @@ public final class VoipAnnouncer {
                             MAIN.removeCallbacks(sRoundTimeout);
                             sRoundTimeout = null;
                         }
-                        MAIN.postDelayed(VoipAnnouncer::restoreMaxRing, 1_000L);
+                        MAIN.postDelayed(VoipAnnouncer::restoreMaxRing, 1_500L);
                         if (sLooping) {
-                            scheduleNextRound(sApp, 4_000L);
+                            scheduleNextRound(sApp, 7_000L);
                         }
                     });
                 }
@@ -573,4 +573,6 @@ public final class VoipAnnouncer {
         }
     }
 }
+
+
 

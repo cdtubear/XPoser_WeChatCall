@@ -60,6 +60,40 @@ public final class IncomingCallMonitor {
     }
 
     /**
+     * 微信撤掉来电通知：对方取消、本方挂断、或接听后通知被替换
+     * 立即结束播报，避免电话已经没了还在循环。
+     */
+    public static void noteCallGone(android.content.Context context) {
+        var hadCall = sNativeAt > 0 || !sNativeCallId.isEmpty();
+        var notifId = sNativeCallId;
+        sNativeCallId = "";
+        sNativeAt = 0;
+        sNativeUsed = true;
+        synchronized (SESSIONS) {
+            for (var session : SESSIONS.values()) {
+                if (session.done || session.destroyed) {
+                    continue;
+                }
+                session.done = true;
+                hadCall = true;
+                if (context != null) {
+                    VoipReporter.reportState(context, session.id,
+                        session.accepted ? TriggerContract.VS_ENDED
+                            : TriggerContract.VS_MISSED,
+                        "call notification cancelled");
+                }
+            }
+        }
+        if (context != null && !notifId.isEmpty()) {
+            VoipReporter.reportState(context, notifId,
+                TriggerContract.VS_MISSED, "call notification cancelled");
+        }
+        if (hadCall) {
+            LogHelp.i(TAG, "voip notification gone, stop announcing");
+        }
+    }
+
+    /**
      * 是否已有正在响铃/通话的会话，避免重复播报
      */
     public static boolean hasActiveSession() {
