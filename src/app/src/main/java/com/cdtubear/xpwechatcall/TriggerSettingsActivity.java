@@ -36,12 +36,17 @@ import com.cdtubear.xpwechatcall.trigger.TriggerService;
 import com.cdtubear.xpwechatcall.trigger.WatchdogHelper;
 import com.cdtubear.xpwechatcall.update.UpdateInfo;
 import com.cdtubear.xpwechatcall.update.UpdateManager;
+import com.cdtubear.xpwechatcall.voip.VoipAnnouncer;
+import com.cdtubear.xpwechatcall.voip.VoipStore;
 
 import org.json.JSONArray;
 import org.json.JSONObject;
 
 import java.io.File;
+import java.text.SimpleDateFormat;
 import java.util.ArrayList;
+import java.util.Date;
+import java.util.Locale;
 
 /**
  * 设置页
@@ -66,6 +71,8 @@ public class TriggerSettingsActivity extends Activity {
     private Switch swUnlock;
     private Switch swWatchdog;
     private Switch swBt;
+    private Switch swVoipAnnounce;
+    private TextView tvVoipStatus;
     private TextView tvStatus;
     private TextView tvToken;
     private TextView tvHint;
@@ -121,12 +128,14 @@ public class TriggerSettingsActivity extends Activity {
         syncingUi = true;
         swEnable.setChecked(TriggerContract.isEnabled(this));
         swBt.setChecked(TriggerContract.isBtEnabled(this));
+        swVoipAnnounce.setChecked(TriggerContract.voipAnnounce(this));
         syncingUi = false;
         updateStatus();
         updateBtStatus();
         renderBtDevices();
         refreshKeepAliveAsync();
         renderUpdateState();
+        renderVoipStatus();
         // 已连接设备详情需要实时刷新
         deviceHandler.removeCallbacks(devicePoll);
         deviceHandler.postDelayed(devicePoll, DEVICE_POLL_MS);
@@ -144,6 +153,8 @@ public class TriggerSettingsActivity extends Activity {
         swUnlock = findViewById(R.id.sw_unlock);
         swWatchdog = findViewById(R.id.sw_watchdog);
         swBt = findViewById(R.id.sw_bt);
+        swVoipAnnounce = findViewById(R.id.sw_voip_announce);
+        tvVoipStatus = findViewById(R.id.tv_voip_status);
         tvStatus = findViewById(R.id.tv_status);
         tvToken = findViewById(R.id.tv_token);
         tvHint = findViewById(R.id.tv_hint);
@@ -246,6 +257,7 @@ public class TriggerSettingsActivity extends Activity {
         updateStatus();
         updateBtStatus();
         renderBtDevices();
+        renderVoipStatus();
         updateHint();
     }
 
@@ -263,6 +275,26 @@ public class TriggerSettingsActivity extends Activity {
         btnUpdate.setOnClickListener(v -> onUpdateClicked());
         findViewById(R.id.btn_update_page).setOnClickListener(v ->
             UpdateManager.openReleasesPage(this));
+        findViewById(R.id.btn_voip_test).setOnClickListener(v -> {
+            if (!TriggerContract.voipAnnounce(this)) {
+                toast("请先打开来电播报开关");
+                return;
+            }
+            VoipAnnouncer.preview(this);
+            toast("正在试听播报");
+        });
+        swVoipAnnounce.setOnCheckedChangeListener((buttonView, isChecked) -> {
+            if (syncingUi) {
+                return;
+            }
+            TriggerContract.setVoipAnnounce(this, isChecked);
+            if (isChecked) {
+                requestRuntimePermissions(false);
+            } else {
+                VoipAnnouncer.stop(this);
+            }
+            renderVoipStatus();
+        });
         swEnable.setOnCheckedChangeListener((buttonView, isChecked) -> {
             if (!syncingUi) {
                 saveAndApply();
@@ -782,6 +814,14 @@ public class TriggerSettingsActivity extends Activity {
             + "查询结果\n"
             + "curl -H \"Authorization: Bearer <TOKEN>\" \\\n  " + base
             + "/v1/result/{request_id}\n\n"
+            + "查询当前微信来电\n"
+            + "curl -H \"Authorization: Bearer <TOKEN>\" \\\n  " + base
+            + "/v1/incoming\n\n"
+            + "接听微信来电\n"
+            + "curl -X POST " + base + "/v1/answer \\\n"
+            + "  -H \"Authorization: Bearer <TOKEN>\" \\\n"
+            + "  -H \"Content-Type: application/json\" \\\n"
+            + "  -d '{\"call_id\":\"可选，来自 /v1/incoming\"}'\n\n"
             + "蓝牙触发（BLE）\n"
             + "Service: " + BtProtocol.SERVICE_UUID + "\n"
             + "RX: " + BtProtocol.RX_UUID + "\n"
@@ -821,6 +861,55 @@ public class TriggerSettingsActivity extends Activity {
     /**
      * 根据缓存和当前任务状态刷新更新卡片
      */
+    /**
+     * 显示最近一通微信来电，便于确认 Hook 与播报是否生效
+     */
+    private void renderVoipStatus() {
+        if (tvVoipStatus == null) {
+            return;
+        }
+        var current = VoipStore.current(this);
+        if (current == null) {
+            tvVoipStatus.setText("暂无来电记录。收到微信来电后这里会显示联系人、类型与状态。");
+            return;
+        }
+        var name = current.optString("name", "").trim();
+        if (name.isEmpty()) {
+            name = "未知联系人";
+        }
+        var video = TriggerContract.CALL_VIDEO.equals(current.optString("type", ""));
+        var state = current.optString("state", "");
+        String stateText;
+        switch (state) {
+            case TriggerContract.VS_RINGING:
+                stateText = "响铃中";
+                break;
+            case TriggerContract.VS_ANSWERED:
+                stateText = "已接听";
+                break;
+            case TriggerContract.VS_MISSED:
+                stateText = "未接";
+                break;
+            case TriggerContract.VS_ENDED:
+                stateText = "已结束";
+                break;
+            case TriggerContract.VS_ANSWER_FAILED:
+                stateText = "接听失败";
+                break;
+            default:
+                stateText = state;
+        }
+        var updated = current.optLong("updated_at", 0);
+        var time = updated > 0
+            ? new SimpleDateFormat("MM-dd HH:mm:ss", Locale.getDefault())
+                .format(new Date(updated))
+            : "";
+        tvVoipStatus.setText(String.format(Locale.ROOT,
+            "最近来电：%s（%s）\n状态：%s  %s\n播报：%s",
+            name, video ? "视频" : "语音", stateText, time,
+            TriggerContract.voipAnnounce(this) ? "已开启" : "已关闭"));
+    }
+
     private void renderUpdateState() {
         var current = UpdateManager.currentVersion(this);
         tvUpdateVersion.setText(getString(R.string.update_version_value, current));

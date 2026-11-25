@@ -46,6 +46,8 @@ public final class BtProtocol {
     public static final String ACTION_HEALTH = "health";
     public static final String ACTION_FRIENDS = "friends";
     public static final String ACTION_RESOLVE = "resolve";
+    public static final String ACTION_INCOMING = "incoming";
+    public static final String ACTION_ANSWER = "answer";
     public static final String ACTION_PING = "ping";
     public static final String ACTION_HELP = "help";
 

@@ -481,6 +481,17 @@ public class TriggerService extends Service {
                 sendJson(output, accepted ? 202 : 200, result);
                 return;
             }
+            if ("GET".equals(method) && "/v1/incoming".equals(path)) {
+                sendJson(output, 200, TriggerApi.incoming(this));
+                return;
+            }
+            if ("POST".equals(method) && "/v1/answer".equals(path)) {
+                var result = TriggerApi.answerIncoming(this, parseBody(body), false);
+                var accepted = result.optBoolean("ok", false)
+                    && TriggerContract.S_ACCEPTED.equals(result.optString("state", ""));
+                sendJson(output, accepted ? 202 : 200, result);
+                return;
+            }
             if ("GET".equals(method) && path.startsWith("/v1/result/")) {
                 var id = URLDecoder.decode(path.substring("/v1/result/".length()),
                     StandardCharsets.UTF_8.name());
@@ -604,6 +615,8 @@ public class TriggerService extends Service {
                 .put("POST /v1/resolve")
                 .put("GET /v1/friends")
                 .put("POST /v1/call")
+                .put("GET /v1/incoming")
+                .put("POST /v1/answer")
                 .put("GET /v1/result/{request_id}"));
             json.put("auth", "Authorization: Bearer <token>");
         } catch (Exception ignored) {

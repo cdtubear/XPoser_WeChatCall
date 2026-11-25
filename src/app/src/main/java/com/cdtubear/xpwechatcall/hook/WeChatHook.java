@@ -53,6 +53,8 @@ public class WeChatHook {
         if (!INSTALLED.compareAndSet(false, true)) {
             return;
         }
+        // 来电播报/接听与发起通话互不影响，先装上，避免主界面类差异导致整体失败
+        VoipHook.install(loader);
         var clazz = XposedHelpers.findClass(LAUNCHER_UI, loader);
 
         XposedHelpers.findAndHookMethod(clazz, "onCreate", Bundle.class, new XC_MethodHook() {

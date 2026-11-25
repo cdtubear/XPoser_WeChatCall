@@ -4,6 +4,8 @@ import android.content.Context;
 import android.net.Uri;
 
 import com.cdtubear.xpwechatcall.BuildConfig;
+import com.cdtubear.xpwechatcall.voip.VoipAnnouncer;
+import com.cdtubear.xpwechatcall.voip.VoipStore;
 import com.zgcwkj.comm.FriendIndex;
 import com.zgcwkj.comm.FriendSync;
 import com.zgcwkj.comm.LogHelp;
@@ -267,6 +269,11 @@ public final class TriggerApi {
             response.put("last_hook_report", TriggerContract.lastHookReport(context));
             response.put("auto_unlock", TriggerContract.autoUnlock(context));
             response.put("timeout_sec", TriggerContract.timeoutSec(context));
+            response.put("voip_announce", TriggerContract.voipAnnounce(context));
+            var voip = VoipStore.current(context);
+            response.put("voip_ringing", voip != null
+                && TriggerContract.VS_RINGING.equals(voip.optString("state", "")));
+            response.put("voip", voip == null ? JSONObject.NULL : voip);
             var busy = TriggerStore.busyRequestId(context);
             response.put("busy", busy != null);
             response.put("current_request_id", busy == null ? "" : busy);
@@ -303,6 +310,145 @@ public final class TriggerApi {
             onTerminal(context, updated);
         }
         return with(ok(), "data", updated);
+    }
+
+    /**
+     * 微信进程上报一通来电
+     */
+    public static JSONObject reportVoipIncoming(Context context, JSONObject request) {
+        if (request == null) {
+            return error(TriggerContract.E_BAD_REQUEST, "json body is required");
+        }
+        var id = request.optString("call_id", "").trim();
+        if (!TriggerContract.isValidRequestId(id)) {
+            return error(TriggerContract.E_BAD_REQUEST, "invalid call_id");
+        }
+        var name = sanitizeName(request.optString("name", ""));
+        var type = normalizeType(request.optString("type", TriggerContract.CALL_VIDEO));
+        if (type == null) {
+            type = TriggerContract.CALL_VIDEO;
+        }
+        var started = request.optLong("started_at", System.currentTimeMillis());
+        var now = System.currentTimeMillis();
+        if (started <= 0 || started > now + 5000) {
+            started = now;
+        }
+        var fresh = VoipStore.onIncoming(context, id, name, type, started);
+        TriggerContract.setLastHookReport(context, now);
+        if (fresh && TriggerContract.voipAnnounce(context)) {
+            VoipAnnouncer.announce(context, name, type);
+        }
+        return with(ok(), "data", VoipStore.current(context));
+    }
+
+    /**
+     * 微信进程上报接听 / 错过 / 结束
+     */
+    public static JSONObject reportVoipState(Context context, JSONObject request) {
+        if (request == null) {
+            return error(TriggerContract.E_BAD_REQUEST, "json body is required");
+        }
+        var id = request.optString("call_id", "").trim();
+        var state = request.optString("state", "").trim();
+        if (!TriggerContract.isValidRequestId(id)) {
+            return error(TriggerContract.E_BAD_REQUEST, "invalid call_id");
+        }
+        if (!TriggerContract.isValidVoipState(state)) {
+            return error(TriggerContract.E_BAD_REQUEST, "invalid state");
+        }
+        var detail = request.optString("detail", "").trim();
+        if (detail.length() > 200) {
+            detail = detail.substring(0, 200);
+        }
+        VoipStore.onState(context, id, state, detail);
+        TriggerContract.setLastHookReport(context, System.currentTimeMillis());
+        if (!TriggerContract.VS_RINGING.equals(state)) {
+            VoipAnnouncer.stop(context);
+        }
+        return with(ok(), "data", VoipStore.current(context));
+    }
+
+    /**
+     * 微信进程轮询接听命令，取走后命令立即失效
+     */
+    public static String pollVoipCommand(Context context, String callId) {
+        var id = callId == null ? "" : callId.trim();
+        if (!TriggerContract.isValidRequestId(id)) {
+            return "";
+        }
+        return VoipStore.takeCommand(context, id);
+    }
+
+    /**
+     * 接听当前来电
+     */
+    public static JSONObject answerIncoming(Context context, JSONObject request,
+                                            boolean fromBluetooth) {
+        return answerIncoming(context, request, fromBluetooth, true);
+    }
+
+    /**
+     * 接听当前来电
+     *
+     * 通过状态里写入 pending 命令，由微信进程轮询后点击界面「接听」，
+     * 因此手机需要保持微信来电界面在前台（锁屏也可以）。
+     *
+     * @param requireEnabled false 时供本地通知按钮使用，不受外部触发总开关限制
+     */
+    public static JSONObject answerIncoming(Context context, JSONObject request,
+                                            boolean fromBluetooth, boolean requireEnabled) {
+        if (requireEnabled) {
+            if (fromBluetooth) {
+                if (!TriggerContract.isBtEnabled(context)) {
+                    return error(TriggerContract.E_DISABLED, "bluetooth trigger is disabled");
+                }
+            } else if (!TriggerContract.isEnabled(context)) {
+                return error(TriggerContract.E_DISABLED, "external trigger is disabled");
+            }
+        }
+        var requested = request == null ? "" : request.optString("call_id", "").trim();
+        if (!requested.isEmpty() && !TriggerContract.isValidRequestId(requested)) {
+            return error(TriggerContract.E_BAD_REQUEST, "invalid call_id");
+        }
+        var id = VoipStore.requestAnswer(context, requested);
+        var current = VoipStore.current(context);
+        if (id == null) {
+            var response = error(TriggerContract.E_NOT_RINGING,
+                "no incoming WeChat call is ringing");
+            with(response, "state", current == null ? "" : current.optString("state", ""));
+            with(response, "incoming", current == null ? JSONObject.NULL : current);
+            return response;
+        }
+        LogHelp.i(TAG, "voip answer accepted id=" + id
+            + " source=" + (fromBluetooth ? "bt" : "http"));
+        var response = ok();
+        with(response, "call_id", id);
+        with(response, "state", TriggerContract.S_ACCEPTED);
+        with(response, "action", "answer");
+        with(response, "source", fromBluetooth ? BtProtocol.SOURCE_BT : "http");
+        return response;
+    }
+
+    /**
+     * 查询最近一通来电，用于外部轮询来电事件
+     */
+    public static JSONObject incoming(Context context) {
+        var current = VoipStore.current(context);
+        var response = ok();
+        with(response, "incoming", current == null ? JSONObject.NULL : current);
+        with(response, "state", current == null ? "" : current.optString("state", ""));
+        return response;
+    }
+
+    /**
+     * 联系人名字做长度与控制字符过滤，避免异常文本进入通知与 TTS
+     */
+    private static String sanitizeName(String raw) {
+        if (raw == null) {
+            return "";
+        }
+        var value = raw.replaceAll("[\\p{Cntrl}\\r\\n]", "").trim();
+        return value.length() <= 40 ? value : value.substring(0, 40);
     }
 
     private static void launch(Context context, String requestId, String wxid, String type) {

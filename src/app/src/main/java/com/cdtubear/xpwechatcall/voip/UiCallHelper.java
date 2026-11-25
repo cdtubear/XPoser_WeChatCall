@@ -283,8 +283,10 @@ public class UiCallHelper {
 
     /**
      * 收集当前进程所有窗口的根视图
+     *
+     * 来电界面与对话框也可能是独立窗口，播报/接听同样需要跨窗口查找。
      */
-    private static java.util.List<View> allRootViews() {
+    static java.util.List<View> allRootViews() {
         var roots = new java.util.ArrayList<View>();
         try {
             var cls = Class.forName("android.view.WindowManagerGlobal");

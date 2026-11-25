@@ -70,6 +70,8 @@
 | `health` | 查看服务、好友、蓝牙状态 |
 | `friends` | 获取好友列表，支持分页与关键字 |
 | `resolve` | 按昵称 / 备注查 wxid |
+| `incoming` | 查询最近一通微信来电与响铃状态 |
+| `answer` | 接听当前微信来电，受理后状态为 `ACCEPTED` |
 | `ping` | 连通性测试 |
 | `help` | 返回 UUID、帧格式和动作列表 |
 
@@ -153,6 +155,18 @@
 ```json
 {"token":"<TOKEN>","action":"resolve","name":"张三","fuzzy":true,"limit":20}
 ```
+
+### incoming / answer
+
+```json
+{"token":"<TOKEN>","action":"incoming"}
+```
+
+```json
+{"token":"<TOKEN>","action":"answer"}
+```
+
+`answer` 可带 `call_id` 指定某一通来电，省略时接听当前正在响铃的那一通。没有来电时返回 `NOT_RINGING`。
 
 ### ping / help
 

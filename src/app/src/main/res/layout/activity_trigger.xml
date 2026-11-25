@@ -327,6 +327,50 @@
                 </LinearLayout>
             </LinearLayout>
 
+            <!-- 微信来电播报 -->
+            <TextView
+                style="@style/SectionTitle"
+                android:text="微信来电播报" />
+
+            <LinearLayout style="@style/Card">
+
+                <Switch
+                    android:id="@+id/sw_voip_announce"
+                    style="@style/SwitchRow"
+                    android:text="来电时播报联系人名字" />
+
+                <TextView
+                    android:id="@+id/tv_voip_status"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="6dp"
+                    android:fontFamily="monospace"
+                    android:lineSpacingExtra="2dp"
+                    android:textColor="@color/text_hint"
+                    android:textSize="12sp" />
+
+                <TextView
+                    style="@style/Hint"
+                    android:text="微信来电界面出现时，模块会用系统语音播报「张三，微信视频来电」，并发一条带「接听」按钮的通知。播报依赖系统 TTS 中文引擎，通知需要通知权限。" />
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="12dp"
+                    android:orientation="horizontal">
+
+                    <Button
+                        android:id="@+id/btn_voip_test"
+                        style="@style/ButtonSecondary"
+                        android:text="试听播报" />
+                </LinearLayout>
+
+                <TextView
+                    style="@style/Hint"
+                    android:layout_marginTop="14dp"
+                    android:text="接听接口：POST /v1/answer，请求体可带 call_id；查询来电：GET /v1/incoming。也可以直接点通知栏的「接听」。接听依赖微信来电界面处于前台（锁屏时可自动点亮），由模块在微信进程内点击「接听」按钮完成。" />
+            </LinearLayout>
+
             <!-- 结果回调 -->
             <TextView
                 style="@style/SectionTitle"

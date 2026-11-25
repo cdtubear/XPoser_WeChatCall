@@ -2,7 +2,7 @@ openapi: 3.0.3
 
 info:
   title: XpWeChatCall 外部触发 API
-  version: 1.1.0
+  version: 1.1.4
   description: |
     XpWeChatCall 模块内置 HTTP 服务，用于从外部 webhook / 脚本触发微信视频或语音通话。
 
@@ -29,6 +29,7 @@ info:
     - 鉴权失败返回 `401`，触发限流返回 `429`，未知路径返回 `404`
     - 业务错误一律返回 HTTP `200`，通过响应体中的 `ok: false` 和 `error` 判断
     - `/v1/call` 请求被接受时返回 `202 Accepted`
+    - `/v1/answer` 接听命令被受理时返回 `202 Accepted`
     - 请求体上限 64 KB，超过时返回 `413`
     - `SUCCESS` 只表示本机已点击到通话界面，**不代表对方接听**
   license:
@@ -53,6 +54,8 @@ tags:
     description: 好友查询
   - name: Call
     description: 通话触发与结果
+  - name: Voip
+    description: 微信来电查询与接听
   - name: System
     description: 帮助信息
 
@@ -107,6 +110,9 @@ paths:
                     timeout_sec: 30
                     busy: false
                     current_request_id: ''
+                    voip_announce: true
+                    voip_ringing: false
+                    voip: null
         '401':
           $ref: '#/components/responses/Unauthorized'
         '429':
@@ -389,6 +395,61 @@ paths:
                   description: 回调接收成功；非 2xx 会触发重试
                 '4XX':
                   description: 回调被拒绝，模块会重试最多 3 次
+
+  /v1/incoming:
+    get:
+      tags: [ Voip ]
+      summary: 查询最近一通微信来电
+      description: |
+        只保留最近 10 分钟的一通来电。响铃超过 75 秒仍未处理时自动转为 `MISSED`。
+        没有记录时 `incoming` 为 `null`，`state` 为空串。
+      operationId: getIncomingCall
+      responses:
+        '200':
+          description: 最近来电信信息
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VoipIncomingResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+
+  /v1/answer:
+    post:
+      tags: [ Voip ]
+      summary: 接听当前微信来电
+      description: |
+        写入接听命令，由微信进程内的模块轮询后点击来电界面的「接听」。
+        受理成功返回 `202`，实际结果通过 `/v1/incoming` 查询。
+        没有正在响铃的来电、来电已超过 75 秒、或 `call_id` 不匹配时返回 `NOT_RINGING`。
+      operationId: answerIncomingCall
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/VoipAnswerRequest'
+      responses:
+        '202':
+          description: 接听命令已受理
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VoipAnswerResponse'
+        '200':
+          description: 未受理，响应中 `ok=false` 或状态不是 `ACCEPTED`
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/VoipAnswerResponse'
+                  - $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/RateLimited'
 
   /v1/result/{request_id}:
     get:
@@ -792,6 +853,8 @@ components:
             - CHAT_OPEN_FAILED
             - CALL_BUTTON_NOT_FOUND
             - BT_UNAVAILABLE
+            - NOT_RINGING
+            - ANSWER_FAILED
             - TIMEOUT
             - INTERNAL
         detail:
@@ -899,6 +962,16 @@ components:
         current_request_id:
           type: string
           description: 有进行中的请求时为其 ID，否则为空字符串
+        voip_announce:
+          type: boolean
+          description: 是否开启微信来电播报
+        voip_ringing:
+          type: boolean
+          description: 当前是否有正在响铃的微信来电
+        voip:
+          nullable: true
+          allOf:
+            - $ref: '#/components/schemas/VoipIncoming'
 
     HelpResponse:
       type: object
@@ -948,7 +1021,77 @@ components:
           format: int64
           description: 距最近一条有效指令的秒数，-1 表示尚未收到
 
-    ErrorResponse:
+    VoipIncoming:
+      type: object
+      description: 最近一通微信来电
+      properties:
+        call_id:
+          type: string
+          description: 模块生成的来电 ID，接听时可用于校验
+        name:
+          type: string
+          description: 从界面识别出的联系人名字，可能为空
+        type:
+          type: string
+          enum: [ video, voice ]
+        state:
+          type: string
+          enum: [ RINGING, ANSWERED, MISSED, ENDED, ANSWER_FAILED ]
+        started_at:
+          type: integer
+          format: int64
+          description: 识别到来电的时间戳（毫秒）
+        updated_at:
+          type: integer
+          format: int64
+        answered_at:
+          type: integer
+          format: int64
+          description: 接听时间戳，未接听为 0
+        detail:
+          type: string
+          description: 状态说明，例如 ring timeout / answered by api
+        source:
+          type: string
+          enum: [ wechat ]
+
+    VoipIncomingResponse:
+      type: object
+      properties:
+        ok:
+          type: boolean
+        state:
+          type: string
+          description: 与 `incoming.state` 一致，没有记录时为空串
+        incoming:
+          nullable: true
+          allOf:
+            - $ref: '#/components/schemas/VoipIncoming'
+
+    VoipAnswerRequest:
+      type: object
+      properties:
+        call_id:
+          type: string
+          description: 可选，来自 `/v1/incoming`；省略时接听当前响铃中的来电
+          pattern: '^[A-Za-z0-9_.:-]{1,64}$'
+
+    VoipAnswerResponse:
+      type: object
+      properties:
+        ok:
+          type: boolean
+        call_id:
+          type: string
+        state:
+          type: string
+          enum: [ ACCEPTED ]
+        action:
+          type: string
+          enum: [ answer ]
+        source:
+          type: string
+          enum: [ http, bt ]
       type: object
       required: [ ok, error, message ]
       properties:
@@ -977,6 +1120,8 @@ components:
             - CHAT_OPEN_FAILED
             - CALL_BUTTON_NOT_FOUND
             - BT_UNAVAILABLE
+            - NOT_RINGING
+            - ANSWER_FAILED
             - TIMEOUT
             - INTERNAL
         message:

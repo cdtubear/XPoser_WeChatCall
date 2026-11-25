@@ -41,6 +41,8 @@ Hook 边界选择稳定且可被外部拉起的 `com.tencent.mm.ui.LauncherUI`�
 - **支持 root 看门狗保活：App 进程被杀后自动恢复 webhook / 蓝牙服务**
 - **支持 root 锁屏唤醒 + 自动解锁（仅滑动锁）**
 - **支持检查更新：从 GitHub Releases 拉取最新版本，校验签名后直接安装**
+- **支持微信来电播报：来电时语音播报联系人名字，并推送带「接听」按钮的通知**
+- **支持来电查询与接听接口：`GET /v1/incoming` 查询，`POST /v1/answer` 或通知按钮接听**
 - 支持快捷方式固定（`ShortcutManager`）与旧版广播两种创建方式
 - 支持写入运行日志，便于排查
 
@@ -59,6 +61,7 @@ Hook 边界选择稳定且可被外部拉起的 `com.tencent.mm.ui.LauncherUI`�
 - 已安装微信
 - 支持的 Xposed 作用域：`com.tencent.mm`
 - 使用「检查更新」自升级时需要允许 `REQUEST_INSTALL_PACKAGES`（安装未知应用）
+- 来电播报与通知需要通知权限（`POST_NOTIFICATIONS`），播报依赖系统中文 TTS 引擎
 
 ## 使用步骤
 
@@ -117,6 +120,8 @@ Authorization: Bearer <TOKEN>
 | GET | `/v1/friends` | 获取全部好友列表，支持分页与关键字过滤 |
 | POST | `/v1/resolve` | 按昵称 / 备注查 wxid |
 | POST | `/v1/call` | 发起视频或语音通话，立即返回 `202` |
+| GET | `/v1/incoming` | 查询最近一通微信来电与响铃状态 |
+| POST | `/v1/answer` | 接听当前微信来电，受理返回 `202` |
 | GET | `/v1/result/{request_id}` | 查询请求状态（回调之外的轮询方式） |
 
 `/v1/friends` 请求示例：
@@ -240,7 +245,7 @@ Bundle result = getContentResolver().call(
 String json = result.getString("result");
 ```
 
-方法名：`resolve_friend`、`list_friends`、`start_call`、`query_result`、`health`。`list_friends` 的 `arg` 支持 `{"offset":0,"limit":50,"keyword":"张三"}`，字段含义与 `/v1/friends` 一致。桌面快捷方式不受该接口影响，也不需要 Token。
+方法名：`resolve_friend`、`list_friends`、`start_call`、`query_result`、`health`、`incoming_call`、`answer_call`。`list_friends` 的 `arg` 支持 `{"offset":0,"limit":50,"keyword":"张三"}`，字段含义与 `/v1/friends` 一致。桌面快捷方式不受该接口影响，也不需要 Token。
 
 ## 蓝牙触发（BLE）
 
@@ -280,7 +285,7 @@ String json = result.getString("result");
 {"token":"<TOKEN>","action":"call","name":"张三","type":"video"}
 ```
 
-支持的 `action`：`call`、`query`、`health`、`friends`、`resolve`、`ping`、`help`。
+支持的 `action`：`call`、`query`、`health`、`friends`、`resolve`、`incoming`、`answer`、`ping`、`help`。
 
 即时响应与 HTTP 接口结构一致：
 
@@ -321,6 +326,73 @@ String json = result.getString("result");
 - 安装完成后微信进程仍持有旧版模块代码，需要重启微信（或重启手机）才能加载新版本。
 - 下载的安装包保存在应用私有目录，安装成功后旧包会自动清理，不会长期占用空间。
 
+## 微信来电播报与接听
+
+微信来电时，模块会在微信进程内识别来电界面，把联系人名字与通话类型回传给模块进程，由模块进程播报并发通知；接听则由模块写入命令，微信进程轮询后点击界面上的「接听」。
+
+### 来电播报
+
+- 设置页「微信来电播报」卡片可开关播报，并提供「试听播报」检查系统 TTS 是否可用。
+- 播报内容为「张三，微信视频来电」或「张三，微信语音来电」；未取到名字时只播报通话类型。
+- 同时推送一条高优先级通知，标题为「微信视频来电 / 微信语音来电」，正文是联系人名字，通知栏带「接听」按钮。
+- 播报使用系统 TTS，需要系统安装中文语音引擎；通知需要通知权限（`POST_NOTIFICATIONS`），振动需要 `VIBRATE`。
+- 通知本身不响铃，避免与微信来电铃声叠加。
+
+### 查询来电
+
+```bash
+curl -H "Authorization: Bearer <TOKEN>" \
+  http://手机IP:8790/v1/incoming
+```
+
+返回最近一通来电，没有记录时 `incoming` 为 `null`：
+
+```json
+{
+  "ok": true,
+  "state": "RINGING",
+  "incoming": {
+    "call_id": "voip_1764048000000_1a2b3c",
+    "name": "张三",
+    "type": "video",
+    "state": "RINGING",
+    "started_at": 1764048000000,
+    "updated_at": 1764048001000,
+    "answered_at": 0,
+    "detail": ""
+  }
+}
+```
+
+### 接听来电
+
+```bash
+curl -X POST http://手机IP:8790/v1/answer \
+  -H "Authorization: Bearer <TOKEN>" \
+  -H "Content-Type: application/json" \
+  -d '{"call_id":"voip_1764048000000_1a2b3c"}'
+```
+
+- `call_id` 可省略，省略时接听当前正在响铃的那一通；带上时必须是当前来电，否则返回 `NOT_RINGING`。
+- 受理成功返回 `202` 与 `{"ok":true,"call_id":"...","state":"ACCEPTED","action":"answer"}`；之后由微信进程执行点击，实际结果通过 `GET /v1/incoming` 查询（`ANSWERED` / `ANSWER_FAILED` / `MISSED`）。
+- 没有正在响铃的来电、或来电已超过 75 秒，返回 `NOT_RINGING`。
+- 通知栏的「接听」按钮与接口走同一条命令通道，但不受设置页「外部触发服务」总开关限制。
+- 蓝牙指令同样支持：`{"token":"<TOKEN>","action":"incoming"}` 查询，`{"token":"<TOKEN>","action":"answer"}` 接听。
+
+### 状态与限制
+
+| 状态 | 说明 |
+| --- | --- |
+| `RINGING` | 来电界面已识别，正在响铃 |
+| `ANSWERED` | 已接听（接口点击或用户手动接听） |
+| `MISSED` | 未接：响铃超时、对方取消或界面被销毁 |
+| `ENDED` | 通话结束 |
+| `ANSWER_FAILED` | 收到接听命令但界面上没找到「接听」按钮 |
+
+- 识别依赖微信来电界面的「接听」文案，属于界面自动化，微信大版本改版后可能需要调整。
+- 接听需要微信来电界面处于前台；锁屏时微信会自己点亮屏幕，命令仍可执行。若模块进程被系统冻结，命令最多延迟 30 秒失效。
+- 只处理一对一音视频通话；群聊语音/视频通话不在支持范围内。
+
 ## 项目结构
 
 ```text
@@ -334,6 +406,7 @@ app/src/main/java/com/
     TriggerContract.java  外部触发契约：方法名、状态、错误码、Token、配置
     FriendIndex.java      本地好友索引：按昵称 / 备注查 wxid、分页获取好友列表
     CallReporter.java     微信进程向模块回传通话步骤结果
+    VoipReporter.java     微信进程上报来电状态、轮询接听命令
   cdtubear/xpwechatcall/
     XposedEntry.java      Xposed 入口
     MainActivity.java     好友列表管理界面
@@ -342,8 +415,9 @@ app/src/main/java/com/
     ShortcutActivity.java 快捷方式入口，向微信转发通话请求
     TriggerSettingsActivity.java 外部触发设置页
     hook/
-      WeChatHook.java     拦截微信主界面，触发通话
+      WeChatHook.java     拦截微信主界面，触发通话；装载来电 Hook
       ContactHook.java    捕获 WCDB 主库连接，读取微信好友列表
+      VoipHook.java       拦截微信音视频界面生命周期，驱动来电识别
     trigger/
       TriggerApi.java     外部触发核心：解析好友、发起、查询、回调
       TriggerProvider.java 外部触发 ContentProvider
@@ -358,6 +432,11 @@ app/src/main/java/com/
       BootReceiver.java   开机 / 升级后恢复外部触发服务
     voip/
       UiCallHelper.java   打开聊天页并模拟点击发起通话
+      IncomingCallUi.java 识别来电界面、取联系人名字、点击「接听」
+      IncomingCallMonitor.java 微信进程内的来电会话：上报、轮询命令、监听手动接听
+      VoipStore.java      模块进程内的最近来电状态与接听命令
+      VoipAnnouncer.java  来电语音播报与带「接听」按钮的通知
+      VoipActionReceiver.java 通知栏「接听」按钮广播
     update/
       UpdateInfo.java     最新版本信息模型（版本号、说明、APK 地址）
       UpdateManager.java  版本检查、APK 下载、包名/版本/签名校验、拉起安装器
@@ -383,6 +462,12 @@ app/src/main/res/
 | `WeChatHook` | 拦截 `LauncherUI` 生命周期，识别通话参数并清理标记 |
 | `ContactHook` | 捕获 WCDB 主库连接，从 `rcontact` 表读取并过滤好友列表 |
 | `UiCallHelper` | 打开好友聊天页，按界面文案模拟点击「+」与通话按钮 |
+| `VoipHook` | 拦截微信音视频界面 `onResume` / `onNewIntent` / `onDestroy`，驱动来电识别 |
+| `IncomingCallUi` | 收集来电界面文字，识别「接听」与来电人名字，按文案或坐标点击接听 |
+| `IncomingCallMonitor` | 微信进程内的来电会话：上报状态、每 700ms 轮询接听命令、监听手动接听与取消 |
+| `VoipStore` | 模块进程持久化最近来电状态与接听命令，带响铃超时与命令失效 |
+| `VoipAnnouncer` | 系统 TTS 播报联系人，推送带「接听」按钮的高优先级通知 |
+| `VoipActionReceiver` | 通知栏「接听」按钮，写入接听命令 |
 | `CallWidgetProvider` | 桌面控件，显示好友头像与名字，点击直接发起通话 |
 | `UpdateManager` | 读取 GitHub Releases 最新版本，下载并校验 APK 后交给系统安装器 |
 | `TriggerService` | 外部触发前台服务：HTTP 监听、BLE 生命周期、Token 鉴权、限流、超时扫描、心跳 |
@@ -519,6 +604,7 @@ adb shell su -c "ps -A | grep xp_wechatcall_watchdog"
 | 低 | `com.tencent.wcdb.database.SQLiteDatabase`、`rcontact` 表及列名、`LauncherUI` / `ChattingUI` 类名与 `Chat_User` 参数 | 日志记录查询或挂钩失败 |
 | 中 | 头像缓存路径 `MicroMsg/<用户哈希>/avatar/...`、`type` 位标志（`0x1` 好友 / `0x8` 公众号 / `0x20` 服务号） | 头像回退为首字图标；好友过滤数量异常 |
 | 较高 | 界面文案「更多功能」「视频通话」「语音通话」 | 日志记录 `give up at step N` |
+| 较高 | 来电界面 `com.tencent.mm.plugin.voip.ui.VideoActivity` 与「接听」文案 | 来电播报与接听不生效，日志记录 `voip hook skipped` 或 `接听 button not found` |
 
 - `type` 位标志按微信 8.0.77 实测得出，换版本可能需要重新确认
 - 界面文案匹配同时意味着微信语言须为中文

@@ -42,6 +42,10 @@ public final class BtCommandHandler {
                     return TriggerApi.listFriends(context, request);
                 case BtProtocol.ACTION_RESOLVE:
                     return TriggerApi.resolve(context, request);
+                case BtProtocol.ACTION_INCOMING:
+                    return TriggerApi.incoming(context);
+                case BtProtocol.ACTION_ANSWER:
+                    return TriggerApi.answerIncoming(context, request, true);
                 case BtProtocol.ACTION_PING:
                     return BtProtocol.ok().put("pong", true)
                         .put("time", System.currentTimeMillis());
@@ -71,6 +75,8 @@ public final class BtCommandHandler {
                 .put("health")
                 .put("friends")
                 .put("resolve")
+                .put("incoming")
+                .put("answer")
                 .put("ping")
                 .put("help"));
         } catch (Exception ignored) {

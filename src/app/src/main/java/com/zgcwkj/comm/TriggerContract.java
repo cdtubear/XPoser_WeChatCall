@@ -27,8 +27,16 @@ public final class TriggerContract {
     public static final String METHOD_QUERY = "query_result";
     public static final String METHOD_HEALTH = "health";
 
+    /** 来电接听接口 */
+    public static final String METHOD_ANSWER = "answer_call";
+    public static final String METHOD_INCOMING = "incoming_call";
+
     /** 微信进程内部回传结果的方法名 */
     public static final String METHOD_REPORT = "report_result";
+    /** 微信进程回传来电事件、接听结果，以及轮询接听命令 */
+    public static final String METHOD_VOIP_INCOMING = "report_voip_incoming";
+    public static final String METHOD_VOIP_STATE = "report_voip_state";
+    public static final String METHOD_VOIP_POLL = "poll_voip_command";
 
     /** Provider 参数：调用方 Token 与 JSON 内容 */
     public static final String EXTRA_AUTH = "auth";
@@ -51,6 +59,16 @@ public final class TriggerContract {
     public static final String S_SUCCESS = "SUCCESS";
     public static final String S_FAILED = "FAILED";
 
+    /** 来电状态 */
+    public static final String VS_RINGING = "RINGING";
+    public static final String VS_ANSWERED = "ANSWERED";
+    public static final String VS_MISSED = "MISSED";
+    public static final String VS_ENDED = "ENDED";
+    public static final String VS_ANSWER_FAILED = "ANSWER_FAILED";
+
+    /** 接听命令，供微信进程轮询 */
+    public static final String COMMAND_ANSWER = "answer";
+
     /** 错误码 */
     public static final String E_UNAUTHORIZED = "UNAUTHORIZED";
     public static final String E_DISABLED = "DISABLED";
@@ -72,6 +90,8 @@ public final class TriggerContract {
     public static final String E_TIMEOUT = "TIMEOUT";
     public static final String E_INTERNAL = "INTERNAL";
     public static final String E_BT_UNAVAILABLE = "BT_UNAVAILABLE";
+    public static final String E_NOT_RINGING = "NOT_RINGING";
+    public static final String E_ANSWER_FAILED = "ANSWER_FAILED";
 
     /** 配置存储 */
     private static final String PREFS = "trigger_config";
@@ -86,6 +106,9 @@ public final class TriggerContract {
     public static final String K_ALLOWED_PACKAGES = "allowed_packages";
     public static final String K_LAST_HOOK_REPORT = "last_hook_report";
 
+    /** 微信来电播报 */
+    public static final String K_VOIP_ANNOUNCE = "voip_announce";
+
     /** 蓝牙触发配置 */
     public static final String K_BT_ENABLED = "bt_enabled";
 
@@ -97,6 +120,7 @@ public final class TriggerContract {
     public static final int DEF_RATE_LIMIT = 10;
     public static final int DEF_TIMEOUT = 30;
     public static final boolean DEF_BT_ENABLED = false;
+    public static final boolean DEF_VOIP_ANNOUNCE = true;
 
     private TriggerContract() {
     }
@@ -119,6 +143,14 @@ public final class TriggerContract {
 
     public static void setBtEnabled(Context context, boolean enabled) {
         prefs(context).edit().putBoolean(K_BT_ENABLED, enabled).commit();
+    }
+
+    public static boolean voipAnnounce(Context context) {
+        return prefs(context).getBoolean(K_VOIP_ANNOUNCE, DEF_VOIP_ANNOUNCE);
+    }
+
+    public static void setVoipAnnounce(Context context, boolean enabled) {
+        prefs(context).edit().putBoolean(K_VOIP_ANNOUNCE, enabled).commit();
     }
 
     public static String bind(Context context) {
@@ -226,6 +258,25 @@ public final class TriggerContract {
      */
     public static boolean isValidRequestId(String id) {
         return id != null && id.matches("[A-Za-z0-9_.:-]{1,64}");
+    }
+
+    /**
+     * 是否是合法的来电状态，避免 Hook 回传任意内容
+     */
+    public static boolean isValidVoipState(String state) {
+        if (state == null) {
+            return false;
+        }
+        switch (state) {
+            case VS_RINGING:
+            case VS_ANSWERED:
+            case VS_MISSED:
+            case VS_ENDED:
+            case VS_ANSWER_FAILED:
+                return true;
+            default:
+                return false;
+        }
     }
 
     /**

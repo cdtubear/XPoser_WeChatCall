@@ -11,6 +11,8 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- 微信来电通知振动 -->
+    <uses-permission android:name="android.permission.VIBRATE" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <!-- 保活：加入 Doze 白名单、进程被划掉后定时重启 -->
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
@@ -95,6 +97,11 @@
             android:name=".TriggerSettingsActivity"
             android:exported="false"
             android:theme="@style/AppTheme" />
+
+        <!-- 通知栏「接听」按钮：只接受本应用的显式广播 -->
+        <receiver
+            android:name=".voip.VoipActionReceiver"
+            android:exported="false" />
 
         <!-- 外部触发服务：HTTP 监听 + BLE GATT 外设（前台服务） -->
         <service
