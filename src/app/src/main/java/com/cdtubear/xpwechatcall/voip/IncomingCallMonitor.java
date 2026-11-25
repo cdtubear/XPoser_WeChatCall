@@ -143,7 +143,7 @@ public final class IncomingCallMonitor {
         var now = System.currentTimeMillis();
         var cleanName = name == null ? "" : name.trim();
         // 响铃期间微信会反复发提醒通知：沿用同一个 call_id，只续命不重复播报
-        if (!sNativeCallId.isEmpty() && now - sNativeAt < 120_000L
+        if (!sNativeCallId.isEmpty() && now - sNativeAt < 45_000L
             && sNativeName.equals(cleanName)) {
             sNativeAt = now;
             sNativeVideo = video;
@@ -227,6 +227,11 @@ public final class IncomingCallMonitor {
         var session = get(activity);
         if (session == null) {
             LogHelp.i(TAG, "voip activity destroyed without session");
+            // 锁屏/通知式来电可能没有 session，这里也要清掉上一通的 call_id，
+            // 否则同一联系人 45 秒内再打进来会被当成重复通知而不播报
+            sNativeCallId = "";
+            sNativeAt = 0;
+            sNativeUsed = true;
             return;
         }
         session.destroyed = true;

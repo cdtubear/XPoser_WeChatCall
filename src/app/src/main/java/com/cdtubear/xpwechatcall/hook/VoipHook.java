@@ -178,6 +178,7 @@ public final class VoipHook {
     /** 当前微信来电通知的 id/tag，用于识别通知被取消（挂断/对方取消） */
     private static volatile int sCallNotifId = Integer.MIN_VALUE;
     private static volatile String sCallNotifTag;
+    private static volatile String sCallName = "";
     private static Handler sWatchHandler;
     private static Runnable sWatchTask;
 
@@ -363,6 +364,30 @@ public final class VoipHook {
         }
     }
 
+    private static boolean sameCallNotification(StatusBarNotification sbn) {
+        try {
+            var notification = sbn.getNotification();
+            var channel = notification.getChannelId();
+            if (channel != null && (channel.contains("voip") || channel.contains("VoIP"))) {
+                return true;
+            }
+            if ("reminder_channel_id".equals(channel) && !sCallName.isEmpty()) {
+                var extras = notification.extras;
+                if (extras != null) {
+                    var all = textOf(extras.getCharSequence(Notification.EXTRA_TITLE))
+                        + " " + textOf(extras.getCharSequence(Notification.EXTRA_TEXT));
+                    if (all.contains(sCallName)) {
+                        return true;
+                    }
+                }
+            }
+            return sbn.getId() == sCallNotifId
+                && (sCallNotifTag == null || sCallNotifTag.equals(sbn.getTag()));
+        } catch (Throwable ignored) {
+            return false;
+        }
+    }
+
     /**
      * 轮询来电通知是否还在：微信挂断/取消后不一定会调 cancel，
      * 通知从通知栏消失是最可靠的结束信号。
@@ -393,9 +418,7 @@ public final class VoipHook {
                         var found = false;
                         var active = manager.getActiveNotifications();
                         for (var sbn : active) {
-                            if (sbn.getId() == sCallNotifId
-                                && (sCallNotifTag == null
-                                    || sCallNotifTag.equals(sbn.getTag()))) {
+                            if (sameCallNotification(sbn)) {
                                 found = true;
                                 break;
                             }
@@ -515,6 +538,7 @@ public final class VoipHook {
         if (name.isEmpty()) {
             return false;
         }
+        sCallName = name;
         if (IncomingCallMonitor.hasActiveSession()) {
             IncomingCallMonitor.noteNativeName(name, video);
             // 仍然返回 true：让外层用这条通知的 id 跟踪通话是否还在
