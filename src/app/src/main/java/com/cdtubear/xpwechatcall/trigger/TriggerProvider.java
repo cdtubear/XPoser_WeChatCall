@@ -52,15 +52,31 @@ public class TriggerProvider extends ContentProvider {
             // 微信进程专用的来电通道，不要求外部触发开关与 Token
             if (TriggerContract.METHOD_VOIP_INCOMING.equals(method)
                 || TriggerContract.METHOD_VOIP_STATE.equals(method)
-                || TriggerContract.METHOD_VOIP_POLL.equals(method)) {
+                || TriggerContract.METHOD_VOIP_POLL.equals(method)
+                || TriggerContract.METHOD_VOIP_ACK.equals(method)
+                || TriggerContract.METHOD_VOIP_SURFACE.equals(method)) {
                 if (!isFromWeChat()) {
                     LogHelp.w(TAG, "reject voip call from uid=" + Binder.getCallingUid());
                     return bundle(error(TriggerContract.E_UNAUTHORIZED, "only WeChat can call"));
                 }
                 if (TriggerContract.METHOD_VOIP_POLL.equals(method)) {
+                    var result = TriggerApi.claimVoipCommand(context, arg);
                     var command = new Bundle();
-                    command.putString("command", TriggerApi.pollVoipCommand(context, arg));
+                    command.putString("command", result.optString("command", ""));
+                    command.putString("command_id", result.optString("command_id", ""));
                     return command;
+                }
+                if (TriggerContract.METHOD_VOIP_ACK.equals(method)) {
+                    var ack = parse(arg);
+                    return bundle(ack == null
+                        ? error(TriggerContract.E_BAD_REQUEST, "invalid json")
+                        : TriggerApi.ackVoipCommand(context, ack));
+                }
+                if (TriggerContract.METHOD_VOIP_SURFACE.equals(method)) {
+                    var surface = parse(arg);
+                    return bundle(surface == null
+                        ? error(TriggerContract.E_BAD_REQUEST, "invalid json")
+                        : TriggerApi.reportVoipSurface(context, surface));
                 }
                 var payload = parse(arg);
                 if (payload == null) {
@@ -91,10 +107,14 @@ public class TriggerProvider extends ContentProvider {
                     return bundle(TriggerApi.query(context, arg));
                 case TriggerContract.METHOD_HEALTH:
                     return bundle(TriggerApi.health(context));
+                case TriggerContract.METHOD_STATE:
+                    return bundle(TriggerApi.state(context));
                 case TriggerContract.METHOD_INCOMING:
                     return bundle(TriggerApi.incoming(context));
                 case TriggerContract.METHOD_ANSWER:
                     return bundle(TriggerApi.answerIncoming(context, parse(arg), false));
+                case TriggerContract.METHOD_END:
+                    return bundle(TriggerApi.endCall(context, parse(arg), false));
                 default:
                     return bundle(error(TriggerContract.E_NOT_FOUND, "unknown method"));
             }

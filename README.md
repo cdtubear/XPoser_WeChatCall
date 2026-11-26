@@ -5,6 +5,8 @@
 [![XposedModule](https://img.shields.io/badge/XposedModule-repo-green)](https://github.com/Xposed-Modules-Repo)
 [![Build APK](https://github.com/cdtubear/XPoser_WeChatCall/actions/workflows/build-apk.yml/badge.svg)](https://github.com/cdtubear/XPoser_WeChatCall/actions/workflows/build-apk.yml)
 
+当前版本：**1.2.0**。1.1.3–1.1.38 的更新已合并归档，详见 [CHANGELOG.md](CHANGELOG.md)。
+
 通过 Xposed 模块，在桌面为好友创建独立图标，点击图标一步直达微信视频/语音通话
 
 ## 原理
@@ -37,7 +39,7 @@ Hook 边界选择稳定且可被外部拉起的 `com.tencent.mm.ui.LauncherUI`�
 - **支持桌面控件（1×1 / 2×2 / 4×4），绑定好友后点击直接通话**
 - **支持外部触发：模块内置 HTTP 服务，webhook 可按昵称或 wxid 发起通话并查询结果**
 - **支持蓝牙触发：手机作为 BLE 外设，外部设备写入 JSON 指令发起通话并接收结果**
-- **底部导航统一管理首页 / 日志 / 设置，设置页可查看已连接 BLE 设备详情**
+- **底部导航统一管理首页 / 日志 / 设置，设置页按「服务 / 连接 / 来电 / 触发 / 诊断 / 关于」分区，可查看已连接 BLE 设备详情**
 - **支持 root 看门狗保活：App 进程被杀后自动恢复 webhook / 蓝牙服务**
 - **支持 root 锁屏唤醒 + 自动解锁（仅滑动锁）**
 - **支持检查更新：从 GitHub Releases 拉取最新版本，校验签名后直接安装**
@@ -112,16 +114,20 @@ Authorization: Bearer <TOKEN>
 
 也接受 `X-Xp-Token: <TOKEN>`。Token 可在设置页复制或重置；重置后旧调用方立即失效。
 
+设置页「连接」分类可填写**来源 IP 白名单**（逗号分隔，支持 `192.168.8.10` 和 `192.168.8.0/24`）。留空不限制来源，但仍必须携带 Token。
+
 ### 接口
 
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
+| GET | `/v1/state` | 轻量运行状态，1.5 秒缓存、不参与限流，适合诊断页/高频轮询 |
 | GET | `/v1/health` | 服务、root、好友数量、微信安装状态、最近 Hook 回传时间 |
 | GET | `/v1/friends` | 获取全部好友列表，支持分页与关键字过滤 |
 | POST | `/v1/resolve` | 按昵称 / 备注查 wxid |
 | POST | `/v1/call` | 发起视频或语音通话，立即返回 `202` |
 | GET | `/v1/incoming` | 查询最近一通微信来电与响铃状态 |
 | POST | `/v1/answer` | 接听当前微信来电，受理返回 `202` |
+| POST | `/v1/end` | 响铃中自动拒接、已接通自动挂断，受理返回 `202` |
 | GET | `/v1/result/{request_id}` | 查询请求状态（回调之外的轮询方式） |
 
 `/v1/friends` 请求示例：
@@ -205,6 +211,8 @@ ACCEPTED -> LAUNCHED -> CHAT_OPENED -> PANEL_OPENED -> CALL_MENU_OPENED -> SUCCE
 
 常见错误码：`UNAUTHORIZED`、`DISABLED`、`RATE_LIMITED`、`BUSY`、`FRIEND_NOT_FOUND`、`FRIEND_AMBIGUOUS`、`NOT_SYNCED`、`ROOT_DENIED`、`DEVICE_LOCKED`、`LAUNCH_BLOCKED`、`TIMEOUT`。
 
+业务接口现在同时返回标准 HTTP 状态码：受理 `202`，参数错误 `400`，未授权 `401`，禁用/无 root `403`，不存在/过期 `404`，忙碌/未响铃/设备锁定 `409`，限流 `429`，内部错误 `500`，点击失败 `502`，服务不可用 `503`，超时 `504`。响应体仍保留 `ok` / `error` / `message`。
+
 ### 结果回调
 
 在设置页填写允许回调的域名后，把 `callback_url` 传给 `/v1/call`。终态时模块会向该地址 POST 请求记录 JSON，并带上：
@@ -245,7 +253,9 @@ Bundle result = getContentResolver().call(
 String json = result.getString("result");
 ```
 
-方法名：`resolve_friend`、`list_friends`、`start_call`、`query_result`、`health`、`incoming_call`、`answer_call`。`list_friends` 的 `arg` 支持 `{"offset":0,"limit":50,"keyword":"张三"}`，字段含义与 `/v1/friends` 一致。桌面快捷方式不受该接口影响，也不需要 Token。
+方法名：`resolve_friend`、`list_friends`、`start_call`、`query_result`、`health`、`incoming_call`、`answer_call`、`end_call`。`list_friends` 的 `arg` 支持 `{"offset":0,"limit":50,"keyword":"张三"}`，字段含义与 `/v1/friends` 一致。
+
+`end_call` 与 `/v1/end` 行为一致：响铃中拒接、已接通挂断，`arg` 可传 `{"call_id":"..."}`；没有可结束的通话时返回 `BUSY`。桌面快捷方式不受该接口影响，也不需要 Token。
 
 ## 蓝牙触发（BLE）
 
@@ -285,7 +295,13 @@ String json = result.getString("result");
 {"token":"<TOKEN>","action":"call","name":"张三","type":"video"}
 ```
 
-支持的 `action`：`call`、`query`、`health`、`friends`、`resolve`、`incoming`、`answer`、`ping`、`help`。
+```json
+{"token":"<TOKEN>","action":"end"}
+```
+
+`end` 会根据当前状态自动拒接或挂断；可带 `call_id` 指定目标通话。
+
+支持的 `action`：`call`、`query`、`health`、`friends`、`resolve`、`incoming`、`answer`、`end`、`ping`、`help`。
 
 即时响应与 HTTP 接口结构一致：
 
@@ -330,6 +346,20 @@ String json = result.getString("result");
 
 微信来电时，模块会在微信进程内识别来电界面，把联系人名字与通话类型回传给模块进程，由模块进程播报并发通知；接听则由模块写入命令，微信进程轮询后点击界面上的「接听」。
 
+来电界面有三种形态，接听和结束都按形态走不同入口：
+
+- **全屏通话页**：直接点页面上的「接听」或红色拒接/挂断按钮。
+- **顶部悬浮横幅**：横幅是微信自绘窗口，按横幅自身宽高定位绿色接听键和红色拒接/挂断键，不再写死整屏坐标。
+- **右上角小窗**：小窗是独立系统窗口，普通 View 点击打不进去；改为读取微信自己的通话通知，用通知的 `contentIntent` 恢复全屏通话页，再执行接听/拒接/挂断。不需要 root，也不需要无障碍。
+
+小窗入口会优先使用当前 `call_id` 对应的活动通知，并过滤上一通的旧通知；`contentIntent` 会缓存 90 秒，用户把通知清掉后仍能恢复通话页。`.FloatingWindow` 坐标点击只作为最后兜底。
+
+同一通电话后续的“通话中”通知不会再推进 `command_epoch`，也不会把 `ANSWERED` 打回 `RINGING`。
+
+命令投递采用**租约 + ACK**：模块写入 `answer/end` 后，微信进程先领取（`command_state=issued → claimed`，租约 6 秒），执行完必须带 `call_id + command_id` 回 ACK（`acked`）才清理；租约内重复领取会被拒绝，租约过期才允许重新领取。这样 HTTP/BLE 返回 `202` 后即使微信进程重启，也不会丢命令或重复点击。`/v1/state` 能看到 `command_id`、`command_state`、`command_claimed_at`、`command_acked_at` 和当前界面形态 `surface`（`full` / `banner` / `mini`）。
+
+三种形态都支持 `POST /v1/answer` 和 `POST /v1/end`，也支持 BLE 的 `answer` / `end`。
+
 ### 来电播报
 
 - 设置页「微信来电播报」卡片可开关播报，并提供「试听播报」检查系统 TTS 是否可用。
@@ -359,7 +389,11 @@ curl -H "Authorization: Bearer <TOKEN>" \
     "started_at": 1764048000000,
     "updated_at": 1764048001000,
     "answered_at": 0,
-    "detail": ""
+    "detail": "",
+    "surface": "banner",
+    "command_id": "cmd_1764048001000_1a2b3c",
+    "command_state": "acked",
+    "epoch": 9
   }
 }
 ```
@@ -374,10 +408,24 @@ curl -X POST http://手机IP:8790/v1/answer \
 ```
 
 - `call_id` 可省略，省略时接听当前正在响铃的那一通；带上时必须是当前来电，否则返回 `NOT_RINGING`。
-- 受理成功返回 `202` 与 `{"ok":true,"call_id":"...","state":"ACCEPTED","action":"answer"}`；之后由微信进程执行点击，实际结果通过 `GET /v1/incoming` 查询（`ANSWERED` / `ANSWER_FAILED` / `MISSED`）。
+- 受理成功返回 `202` 与 `{"ok":true,"call_id":"...","command_id":"cmd_...","command_epoch":9,"state":"ACCEPTED","action":"answer"}`；之后由微信进程领取并执行点击，实际结果通过 `GET /v1/incoming` 查询（`ANSWERED` / `ANSWER_FAILED` / `MISSED`）。
 - 没有正在响铃的来电、或来电已超过 75 秒，返回 `NOT_RINGING`。
 - 通知栏的「接听」按钮与接口走同一条命令通道，但不受设置页「外部触发服务」总开关限制。
-- 蓝牙指令同样支持：`{"token":"<TOKEN>","action":"incoming"}` 查询，`{"token":"<TOKEN>","action":"answer"}` 接听。
+- 蓝牙指令同样支持：`{"token":"<TOKEN>","action":"incoming"}` 查询，`{"token":"<TOKEN>","action":"answer"}` 接听，`{"token":"<TOKEN>","action":"end"}` 结束。
+
+### 结束通话（拒接 / 挂断）
+
+```bash
+curl -X POST http://手机IP:8790/v1/end \
+  -H "Authorization: Bearer <TOKEN>" \
+  -H "Content-Type: application/json" \
+  -d '{"call_id":"voip_1764048000000_1a2b3c"}'
+```
+
+- 统一结束接口：当前为 `RINGING` 时拒接，返回 `action=reject`；当前为 `ANSWERED` 时挂断，返回 `action=hangup`。
+- 受理成功返回 `202`；没有可结束的通话时返回 `409` + `BUSY`。实际结果通过 `GET /v1/incoming` 查询。
+- `call_id` 可省略；带上时必须匹配当前通话。
+- 蓝牙指令：`{"token":"<TOKEN>","action":"end"}`，也支持可选的 `call_id`。
 
 ### 状态与限制
 
@@ -389,8 +437,8 @@ curl -X POST http://手机IP:8790/v1/answer \
 | `ENDED` | 通话结束 |
 | `ANSWER_FAILED` | 收到接听命令但界面上没找到「接听」按钮 |
 
-- 识别依赖微信来电界面的「接听」文案，属于界面自动化，微信大版本改版后可能需要调整。
-- 接听需要微信来电界面处于前台；锁屏时微信会自己点亮屏幕，命令仍可执行。若模块进程被系统冻结，命令最多延迟 30 秒失效。
+- 识别依赖微信来电界面的「接听」文案与来电窗口形态，属于界面自动化，微信大版本改版后可能需要调整。
+- 全屏、悬浮横幅、右上角小窗都能执行接听/结束，不要求通话页保持前台；小窗会先自动恢复全屏。锁屏时微信会自己点亮屏幕，命令仍可执行。若模块进程被系统冻结，命令最多延迟 30 秒失效。
 - 只处理一对一音视频通话；群聊语音/视频通话不在支持范围内。
 
 ## 项目结构

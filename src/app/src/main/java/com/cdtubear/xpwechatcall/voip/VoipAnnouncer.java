@@ -54,6 +54,11 @@ public final class VoipAnnouncer {
     private static AudioManager sAudio;
     private static int sOriginalRingVolume = -1;
     private static ToneGenerator sTone;
+    /** 播报前保存用户原始音量/铃声模式，结束后恢复，避免永久改系统设置 */
+    private static final java.util.Map<Integer, Integer> sOriginalVolumes =
+        new java.util.HashMap<>();
+    private static int sOriginalRingerMode = -1;
+    private static boolean sSoundSnapshot;
 
     /** 来电期间循环播报，直到接听/挂断/超时 */
     private static boolean sLooping;
@@ -80,13 +85,19 @@ public final class VoipAnnouncer {
             return;
         }
         var app = context.getApplicationContext();
+        sApp = app;
         var video = TriggerContract.CALL_VIDEO.equals(type);
         showNotification(app, name, video);
         if (!TriggerContract.voipSound(app)) {
             LogHelp.i(TAG, "voip sound disabled, notification only, mute wechat ring");
-            muteWeChatRing(app);
+            // 静音播报也要先记下用户原来的铃声/音量，通话结束 stop() 才能恢复
+            ensureAudio(app);
+            captureSoundSnapshot();
+            applySoundMode(app, false);
             return;
         }
+        // 总开关开启：把系统声音恢复到最大并解除静音，再开始播报
+        applySoundMode(app, true);
         var text = buildText(name, video);
         var repeat = buildRepeat(video);
         MAIN.post(() -> startLoop(app, text, repeat));
@@ -223,11 +234,10 @@ public final class VoipAnnouncer {
     }
 
     /**
-     * 只停止播报和提示音，保留来电通知；用于「播报声音」开关关闭
+     * 停止播报和提示音，并按总开关把系统声音切到静音
      */
     public static void silence(Context context) {
         MAIN.post(() -> {
-            var wasLooping = sLooping;
             stopLoop();
             if (sTts != null) {
                 try {
@@ -236,10 +246,7 @@ public final class VoipAnnouncer {
                     // 忽略
                 }
             }
-            // 只在来电响铃期间关闭声音时立刻静音微信铃声；平时切开关不改变系统铃声
-            if (wasLooping && !TriggerContract.voipSound(context)) {
-                muteWeChatRing(context);
-            }
+            applySoundMode(context, false);
             LogHelp.i(TAG, "voip sound silenced");
         });
     }
@@ -266,7 +273,144 @@ public final class VoipAnnouncer {
                     // 忽略
                 }
             }
-            restoreOriginalRing();
+            if (sTone != null) {
+                try {
+                    sTone.release();
+                } catch (Throwable ignored) {
+                    // 忽略
+                }
+                sTone = null;
+            }
+            restoreSoundSnapshot();
+        });
+    }
+
+    private static void ensureAudio(Context context) {
+        if (sAudio != null) {
+            return;
+        }
+        var app = context == null ? sApp : context.getApplicationContext();
+        if (app != null) {
+            sApp = app;
+            sAudio = (AudioManager) app.getSystemService(Context.AUDIO_SERVICE);
+        }
+    }
+
+    private static void captureSoundSnapshot() {
+        if (sSoundSnapshot || sAudio == null) {
+            return;
+        }
+        int[] streams = {
+            AudioManager.STREAM_RING,
+            AudioManager.STREAM_ALARM,
+            AudioManager.STREAM_MUSIC,
+            AudioManager.STREAM_NOTIFICATION,
+            AudioManager.STREAM_SYSTEM
+        };
+        sOriginalVolumes.clear();
+        for (var stream : streams) {
+            try {
+                sOriginalVolumes.put(stream, sAudio.getStreamVolume(stream));
+            } catch (Throwable ignored) {
+                // 单个音频流读取失败不影响其它流
+            }
+        }
+        try {
+            sOriginalRingerMode = sAudio.getRingerMode();
+        } catch (Throwable ignored) {
+            sOriginalRingerMode = -1;
+        }
+        sSoundSnapshot = true;
+        LogHelp.i(TAG, "sound snapshot captured mode=" + sOriginalRingerMode
+            + " volumes=" + sOriginalVolumes);
+    }
+
+    /**
+     * 通话结束恢复用户原来的铃声模式和各音频流音量。
+     * 这是“全局副作用”最后一道保险，不能把系统永久改成最大/静音。
+     */
+    private static void restoreSoundSnapshot() {
+        if (!sSoundSnapshot || sAudio == null) {
+            return;
+        }
+        try {
+            if (sOriginalRingerMode >= 0) {
+                try {
+                    sAudio.setRingerMode(sOriginalRingerMode);
+                    LogHelp.i(TAG, "ringer restored " + sOriginalRingerMode);
+                } catch (Throwable e) {
+                    LogHelp.w(TAG, "restore ringer mode failed: " + e.getMessage());
+                }
+            }
+            for (var entry : sOriginalVolumes.entrySet()) {
+                try {
+                    sAudio.setStreamVolume(entry.getKey(), entry.getValue(), 0);
+                } catch (Throwable ignored) {
+                    // 忽略单条失败
+                }
+            }
+        } catch (Throwable e) {
+            LogHelp.w(TAG, "restore sound snapshot failed: " + e.getMessage());
+        } finally {
+            sOriginalVolumes.clear();
+            sOriginalRingerMode = -1;
+            sSoundSnapshot = false;
+            sOriginalRingVolume = -1;
+        }
+    }
+
+    /**
+     * 声音总开关：
+     * 开 = 系统铃声最大、退出静音，模块正常播报
+     * 关 = 系统铃声最小、进入静音，模块不播报
+     */
+    public static void applySoundMode(Context context, boolean enabled) {
+        if (context == null) {
+            return;
+        }
+        MAIN.post(() -> {
+            try {
+                if (sAudio == null) {
+                    sAudio = (AudioManager) context.getApplicationContext()
+                        .getSystemService(Context.AUDIO_SERVICE);
+                }
+                if (sAudio == null) {
+                    return;
+                }
+                int[] streams = {
+                    AudioManager.STREAM_RING,
+                    AudioManager.STREAM_ALARM,
+                    AudioManager.STREAM_MUSIC,
+                    AudioManager.STREAM_NOTIFICATION,
+                    AudioManager.STREAM_SYSTEM
+                };
+                if (enabled) {
+                    captureSoundSnapshot();
+                    // 小米等系统会因 DND 权限拒绝 setRingerMode，不能让它中断后面的音量设置
+                    try {
+                        sAudio.setRingerMode(AudioManager.RINGER_MODE_NORMAL);
+                    } catch (Throwable e) {
+                        LogHelp.w(TAG, "ringer normal failed: " + e.getMessage());
+                    }
+                    for (var stream : streams) {
+                        sAudio.setStreamVolume(stream,
+                            sAudio.getStreamMaxVolume(stream), 0);
+                    }
+                    LogHelp.i(TAG, "sound master on: volumes max, ringer normal");
+                } else {
+                    try {
+                        sAudio.setRingerMode(AudioManager.RINGER_MODE_SILENT);
+                    } catch (Throwable e) {
+                        LogHelp.w(TAG, "ringer silent failed: " + e.getMessage());
+                    }
+                    for (var stream : streams) {
+                        sAudio.setStreamVolume(stream, 0, 0);
+                    }
+                    LogHelp.i(TAG, "sound master off: volumes 0, ringer silent");
+                }
+            } catch (Throwable e) {
+                LogHelp.w(TAG, "apply sound mode failed: " + e.getMessage());
+            }
         });
     }
 
@@ -320,25 +464,6 @@ public final class VoipAnnouncer {
             MAIN.postDelayed(VoipAnnouncer::restoreOriginalRing, 90_000L);
         } catch (Throwable e) {
             LogHelp.w(TAG, "max ring failed: " + e.getMessage());
-        }
-    }
-
-    /**
-     * 声音开关关闭时，连微信自己的来电铃声也静音；结束通话后恢复最大铃声
-     */
-    private static void muteWeChatRing(Context app) {
-        try {
-            if (sAudio == null) {
-                sAudio = (AudioManager) app.getSystemService(Context.AUDIO_SERVICE);
-            }
-            if (sAudio == null) {
-                return;
-            }
-            sAudio.setStreamVolume(AudioManager.STREAM_RING, 0, 0);
-            LogHelp.i(TAG, "ring muted by sound switch");
-            MAIN.postDelayed(VoipAnnouncer::restoreOriginalRing, 90_000L);
-        } catch (Throwable e) {
-            LogHelp.w(TAG, "mute ring failed: " + e.getMessage());
         }
     }
 

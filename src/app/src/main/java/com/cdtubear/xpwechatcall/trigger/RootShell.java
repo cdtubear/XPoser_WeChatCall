@@ -33,6 +33,7 @@ public final class RootShell {
     /** 0=未检测，1=有 root，2=无 root */
     private static volatile int sRootState;
     private static volatile long sRootCheckedAt;
+    private static volatile boolean sAsyncChecking;
 
     private RootShell() {
     }
@@ -61,9 +62,16 @@ public final class RootShell {
     }
 
     /**
-     * 检查 root，30 秒内复用结果
+     * 只读缓存状态，给 /v1/state 和 UI 用，绝不在这里执行 su。
      */
-    public static boolean hasRoot(Context context) {
+    public static boolean cachedRootGranted() {
+        return sRootState == 1;
+    }
+
+    /**
+     * 检查 root，30 秒内复用结果。用类锁做单飞，避免并发请求各自启动 su。
+     */
+    public static synchronized boolean hasRoot(Context context) {
         var now = System.currentTimeMillis();
         if (sRootState != 0 && now - sRootCheckedAt < 30_000L) {
             return sRootState == 1;
@@ -74,6 +82,29 @@ public final class RootShell {
         sRootCheckedAt = now;
         LogHelp.i(TAG, "root check: " + (granted ? "granted" : "denied"));
         return granted;
+    }
+
+    /** 后台刷新 root 状态，UI 线程不得直接调用 hasRoot() */
+    public static void checkRootAsync(Context context) {
+        var now = System.currentTimeMillis();
+        if (sAsyncChecking) {
+            return;
+        }
+        if (sRootState != 0 && now - sRootCheckedAt < 30_000L) {
+            return;
+        }
+        var app = context == null ? null : context.getApplicationContext();
+        if (app == null) {
+            return;
+        }
+        sAsyncChecking = true;
+        new Thread(() -> {
+            try {
+                hasRoot(app);
+            } finally {
+                sAsyncChecking = false;
+            }
+        }, "xp-root-check").start();
     }
 
     /**

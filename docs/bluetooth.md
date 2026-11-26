@@ -72,6 +72,7 @@
 | `resolve` | 按昵称 / 备注查 wxid |
 | `incoming` | 查询最近一通微信来电与响铃状态 |
 | `answer` | 接听当前微信来电，受理后状态为 `ACCEPTED` |
+| `end` | 统一结束通话：响铃中拒接，已接通则挂断 |
 | `ping` | 连通性测试 |
 | `help` | 返回 UUID、帧格式和动作列表 |
 
@@ -156,7 +157,7 @@
 {"token":"<TOKEN>","action":"resolve","name":"张三","fuzzy":true,"limit":20}
 ```
 
-### incoming / answer
+### incoming / answer / end
 
 ```json
 {"token":"<TOKEN>","action":"incoming"}
@@ -166,7 +167,13 @@
 {"token":"<TOKEN>","action":"answer"}
 ```
 
+```json
+{"token":"<TOKEN>","action":"end"}
+```
+
 `answer` 可带 `call_id` 指定某一通来电，省略时接听当前正在响铃的那一通。没有来电时返回 `NOT_RINGING`。
+
+`end` 为统一结束指令：当前为 `RINGING` 时拒接，返回 `action=reject`；当前为 `ANSWERED` 时挂断，返回 `action=hangup`。没有可结束的通话时返回 `BUSY`。也可带 `call_id` 校验目标通话。
 
 ### ping / help
 
@@ -381,6 +388,9 @@ adb logcat -s XpWeChatCall
 | 好友列表 | `GET /v1/friends` | `{"action":"friends"}` |
 | 昵称解析 | `POST /v1/resolve` | `{"action":"resolve"}` |
 | 健康检查 | `GET /v1/health` | `{"action":"health"}` |
+| 来电查询 | `GET /v1/incoming` | `{"action":"incoming"}` |
+| 接听来电 | `POST /v1/answer` | `{"action":"answer"}` |
+| 结束通话 | `POST /v1/end` | `{"action":"end"}` |
 | 鉴权 | `Authorization: Bearer <TOKEN>` | 指令中的 `token` |
 | 结果通知 | 回调 URL / 轮询 | TX Notify 终态事件 |
 

@@ -68,6 +68,9 @@ public class TriggerService extends Service {
     private static volatile boolean sRunning;
     private static volatile boolean sHttpRunning;
     private static volatile BluetoothTriggerManager sBluetooth;
+    /** /v1/state 短缓存，减少诊断轮询对主流程的影响 */
+    private static volatile long sStateCacheAt;
+    private static volatile JSONObject sStateCache;
 
     private final Handler handler = new Handler(Looper.getMainLooper());
     private final Map<String, Deque<Long>> rateBuckets = new ConcurrentHashMap<>();
@@ -157,6 +160,7 @@ public class TriggerService extends Service {
             return START_NOT_STICKY;
         }
         startForegroundCompat();
+        RootShell.checkRootAsync(this);
         sRunning = true;
         writeHeartbeat();
         if (TriggerContract.isEnabled(this)) {
@@ -276,10 +280,15 @@ public class TriggerService extends Service {
                     requestPool.execute(() -> handle(client));
                 }
             } catch (Throwable e) {
+                var intentional = !running;
                 running = false;
                 sHttpRunning = false;
                 refreshNotification();
-                LogHelp.e(TAG, "trigger http start failed: " + e.getMessage(), e);
+                if (intentional) {
+                    LogHelp.i(TAG, "trigger http accept closed");
+                } else {
+                    LogHelp.e(TAG, "trigger http start failed: " + e.getMessage(), e);
+                }
             }
         }, "xp-trigger-http");
         acceptThread.start();
@@ -406,6 +415,31 @@ public class TriggerService extends Service {
         }
     };
 
+    static void invalidateStateCache() {
+        sStateCacheAt = 0L;
+        sStateCache = null;
+    }
+
+    private JSONObject cachedState() {
+        var now = System.currentTimeMillis();
+        var cached = sStateCache;
+        if (cached != null && now - sStateCacheAt <= 1_500L) {
+            try {
+                return new JSONObject(cached.toString());
+            } catch (Exception ignored) {
+                // 缓存损坏时重新生成
+            }
+        }
+        var fresh = TriggerApi.state(this);
+        sStateCache = fresh;
+        sStateCacheAt = now;
+        try {
+            return new JSONObject(fresh.toString());
+        } catch (Exception e) {
+            return fresh;
+        }
+    }
+
     /**
      * 处理单个 HTTP 连接
      */
@@ -415,32 +449,19 @@ public class TriggerService extends Service {
             var input = new BufferedInputStream(socket.getInputStream());
             var output = socket.getOutputStream();
 
-            var requestLine = readLine(input);
-            if (requestLine == null || requestLine.isEmpty()) {
+            HttpRequest request;
+            try {
+                request = HttpRequest.read(input, MAX_BODY);
+            } catch (HttpRequest.BadRequest e) {
+                send(output, e.status, reason(e.status),
+                    errorJson(TriggerContract.E_BAD_REQUEST, e.getMessage()));
                 return;
             }
-            var parts = requestLine.split(" ");
-            if (parts.length < 2) {
-                send(output, 400, "Bad Request", errorJson(TriggerContract.E_BAD_REQUEST,
-                    "invalid request line"));
-                return;
-            }
-            var method = parts[0].toUpperCase(Locale.ROOT);
-            var target = parts[1];
-            var path = target;
-            var queryIndex = path.indexOf('?');
-            if (queryIndex >= 0) {
-                path = path.substring(0, queryIndex);
-            }
-
-            var headers = readHeaders(input);
-            var length = parseInt(headers.get("content-length"), 0);
-            if (length < 0 || length > MAX_BODY) {
-                send(output, 413, "Payload Too Large", errorJson(TriggerContract.E_BAD_REQUEST,
-                    "body too large"));
-                return;
-            }
-            var body = length == 0 ? "" : new String(readN(input, length), StandardCharsets.UTF_8);
+            var method = request.method;
+            var target = request.target;
+            var path = request.path;
+            var headers = request.headers;
+            var body = request.body;
 
             if (!authorized(headers)) {
                 send(output, 401, "Unauthorized", errorJson(TriggerContract.E_UNAUTHORIZED,
@@ -449,6 +470,16 @@ public class TriggerService extends Service {
             }
             var remote = socket.getInetAddress() == null
                 ? "unknown" : socket.getInetAddress().getHostAddress();
+            if (!allowRemote(remote)) {
+                send(output, 403, "Forbidden", errorJson(TriggerContract.E_UNAUTHORIZED,
+                    "ip not allowed"));
+                return;
+            }
+            // 只读状态不吃限流，诊断页和外部轮询都可以高频调用
+            if ("GET".equals(method) && "/v1/state".equals(path)) {
+                sendJson(output, 200, cachedState());
+                return;
+            }
             if (!allowRequest(remote)) {
                 send(output, 429, "Too Many Requests", errorJson(TriggerContract.E_RATE_LIMITED,
                     "too many requests"));
@@ -460,7 +491,7 @@ public class TriggerService extends Service {
                 return;
             }
             if ("POST".equals(method) && "/v1/resolve".equals(path)) {
-                sendJson(output, 200, TriggerApi.resolve(this, parseBody(body)));
+                sendApiResult(output, TriggerApi.resolve(this, parseBody(body)));
                 return;
             }
             if ("GET".equals(method) && "/v1/friends".equals(path)) {
@@ -476,26 +507,25 @@ public class TriggerService extends Service {
             }
             if ("POST".equals(method) && "/v1/call".equals(path)) {
                 var result = TriggerApi.startCall(this, parseBody(body));
-                var accepted = result.optBoolean("ok", false)
-                    && TriggerContract.S_ACCEPTED.equals(result.optString("state", ""));
-                sendJson(output, accepted ? 202 : 200, result);
+                sendAcceptedResult(output, result);
                 return;
             }
             if ("GET".equals(method) && "/v1/incoming".equals(path)) {
-                sendJson(output, 200, TriggerApi.incoming(this));
+                sendApiResult(output, TriggerApi.incoming(this));
                 return;
             }
             if ("POST".equals(method) && "/v1/answer".equals(path)) {
-                var result = TriggerApi.answerIncoming(this, parseBody(body), false);
-                var accepted = result.optBoolean("ok", false)
-                    && TriggerContract.S_ACCEPTED.equals(result.optString("state", ""));
-                sendJson(output, accepted ? 202 : 200, result);
+                sendAcceptedResult(output, TriggerApi.answerIncoming(this, parseBody(body), false));
+                return;
+            }
+            if ("POST".equals(method) && "/v1/end".equals(path)) {
+                sendAcceptedResult(output, TriggerApi.endCall(this, parseBody(body), false));
                 return;
             }
             if ("GET".equals(method) && path.startsWith("/v1/result/")) {
                 var id = URLDecoder.decode(path.substring("/v1/result/".length()),
                     StandardCharsets.UTF_8.name());
-                sendJson(output, 200, TriggerApi.query(this, id));
+                sendApiResult(output, TriggerApi.query(this, id));
                 return;
             }
             if ("GET".equals(method) && ("/".equals(path) || "/v1".equals(path))) {
@@ -520,12 +550,26 @@ public class TriggerService extends Service {
         return safeEquals(expected, provided);
     }
 
+    /** 可选来源白名单：支持逗号/换行/空格分隔的精确 IP 和 a.b.c.d/prefix */
+    private boolean allowRemote(String remote) {
+        var configured = TriggerContract.allowedIps(this);
+        if (IpWhitelist.allows(remote, configured)) {
+            return true;
+        }
+        LogHelp.w(TAG, "remote denied by ip whitelist: " + remote);
+        return false;
+    }
+
     private boolean allowRequest(String remote) {
         var limit = TriggerContract.rateLimit(this);
         if (limit <= 0) {
             return true;
         }
         var now = System.currentTimeMillis();
+        if (rateBuckets.size() > 256 && !rateBuckets.containsKey(remote)) {
+            // 公网/扫描流量下避免按 IP 的桶无限增长
+            rateBuckets.clear();
+        }
         var bucket = rateBuckets.computeIfAbsent(remote, key -> new ArrayDeque<>());
         synchronized (bucket) {
             while (!bucket.isEmpty() && now - bucket.peekFirst() > 60_000L) {
@@ -612,11 +656,13 @@ public class TriggerService extends Service {
             json.put("service", "XpWeChatCall external trigger");
             json.put("endpoints", new org.json.JSONArray()
                 .put("GET /v1/health")
+                .put("GET /v1/state")
                 .put("POST /v1/resolve")
                 .put("GET /v1/friends")
                 .put("POST /v1/call")
                 .put("GET /v1/incoming")
                 .put("POST /v1/answer")
+                .put("POST /v1/end")
                 .put("GET /v1/result/{request_id}"));
             json.put("auth", "Authorization: Bearer <token>");
         } catch (Exception ignored) {
@@ -644,6 +690,63 @@ public class TriggerService extends Service {
         send(output, status, reason(status), json);
     }
 
+    /**
+     * 业务接口统一状态码：受理 202，其余成功 200，失败按错误码映射到 4xx/5xx。
+     * 响应体仍保留 ok/error/message，老调用方按 body 判断也不会坏。
+     */
+    private static void sendApiResult(OutputStream output, JSONObject result) throws Exception {
+        sendJson(output, statusFor(result), result);
+    }
+
+    /** 只有 call/answer/end 这类“写命令”的接口才把 ACCEPTED 映射成 202 */
+    private static void sendAcceptedResult(OutputStream output, JSONObject result) throws Exception {
+        var accepted = result != null && result.optBoolean("ok", false)
+            && TriggerContract.S_ACCEPTED.equals(result.optString("state", ""));
+        sendJson(output, accepted ? 202 : statusFor(result), result);
+    }
+
+    private static int statusFor(JSONObject result) {
+        if (result == null || !result.has("error")) {
+            return 200;
+        }
+        var error = result.optString("error", "");
+        switch (error) {
+            case TriggerContract.E_BAD_REQUEST:
+                return 400;
+            case TriggerContract.E_UNAUTHORIZED:
+                return 401;
+            case TriggerContract.E_DISABLED:
+            case TriggerContract.E_ROOT_DENIED:
+                return 403;
+            case TriggerContract.E_NOT_FOUND:
+            case TriggerContract.E_FRIEND_NOT_FOUND:
+            case TriggerContract.E_EXPIRED:
+                return 404;
+            case TriggerContract.E_BUSY:
+            case TriggerContract.E_NOT_RINGING:
+            case TriggerContract.E_DEVICE_LOCKED:
+            case TriggerContract.E_LAUNCH_BLOCKED:
+            case TriggerContract.E_FRIEND_AMBIGUOUS:
+                return 409;
+            case TriggerContract.E_RATE_LIMITED:
+                return 429;
+            case TriggerContract.E_INTERNAL:
+                return 500;
+            case TriggerContract.E_ANSWER_FAILED:
+            case TriggerContract.E_CHAT_OPEN_FAILED:
+            case TriggerContract.E_CALL_BUTTON_NOT_FOUND:
+                return 502;
+            case TriggerContract.E_MODULE_INACTIVE:
+            case TriggerContract.E_WECHAT_NOT_INSTALLED:
+            case TriggerContract.E_BT_UNAVAILABLE:
+                return 503;
+            case TriggerContract.E_TIMEOUT:
+                return 504;
+            default:
+                return 500;
+        }
+    }
+
     private static void send(OutputStream output, int status, String reason, JSONObject json)
         throws Exception {
         var bytes = json.toString().getBytes(StandardCharsets.UTF_8);
@@ -666,12 +769,24 @@ public class TriggerService extends Service {
                 return "Bad Request";
             case 401:
                 return "Unauthorized";
+            case 403:
+                return "Forbidden";
             case 404:
                 return "Not Found";
+            case 409:
+                return "Conflict";
             case 413:
                 return "Payload Too Large";
             case 429:
                 return "Too Many Requests";
+            case 500:
+                return "Internal Server Error";
+            case 502:
+                return "Bad Gateway";
+            case 503:
+                return "Service Unavailable";
+            case 504:
+                return "Gateway Timeout";
             default:
                 return "Error";
         }

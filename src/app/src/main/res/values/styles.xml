@@ -43,6 +43,71 @@
         <item name="android:textSize">12sp</item>
     </style>
 
+    <!-- 开关下方的单行说明 -->
+    <style name="RowSubtitle">
+        <item name="android:layout_width">match_parent</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:layout_marginTop">2dp</item>
+        <item name="android:lineSpacingExtra">2dp</item>
+        <item name="android:textColor">@color/text_secondary</item>
+        <item name="android:textSize">12sp</item>
+    </style>
+
+    <!-- 卡片最下方的小字补充 -->
+    <style name="RowCaption">
+        <item name="android:layout_width">match_parent</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:layout_marginTop">10dp</item>
+        <item name="android:lineSpacingExtra">1dp</item>
+        <item name="android:textColor">@color/text_hint</item>
+        <item name="android:textSize">11sp</item>
+    </style>
+
+    <!-- 输入框上方标签 -->
+    <style name="InputLabel">
+        <item name="android:layout_width">match_parent</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:layout_marginBottom">6dp</item>
+        <item name="android:textColor">@color/text_secondary</item>
+        <item name="android:textSize">12sp</item>
+    </style>
+
+    <!-- 运行状态、Token 等灰底信息块 -->
+    <style name="ValueBox">
+        <item name="android:layout_width">match_parent</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:layout_marginTop">12dp</item>
+        <item name="android:background">@drawable/bg_card_flat</item>
+        <item name="android:fontFamily">monospace</item>
+        <item name="android:lineSpacingExtra">3dp</item>
+        <item name="android:padding">12dp</item>
+        <item name="android:textColor">@color/text_hint</item>
+        <item name="android:textSize">12sp</item>
+    </style>
+
+    <!-- 卡片内分隔线 -->
+    <style name="Divider">
+        <item name="android:layout_width">match_parent</item>
+        <item name="android:layout_height">1dp</item>
+        <item name="android:layout_marginTop">14dp</item>
+        <item name="android:layout_marginBottom">14dp</item>
+        <item name="android:background">@color/divider</item>
+    </style>
+
+    <!-- 顶部分类标签 -->
+    <style name="CategoryItem">
+        <item name="android:layout_width">0dp</item>
+        <item name="android:layout_height">38dp</item>
+        <item name="android:layout_weight">1</item>
+        <item name="android:layout_marginStart">3dp</item>
+        <item name="android:layout_marginEnd">3dp</item>
+        <item name="android:background">@drawable/bg_category_item</item>
+        <item name="android:gravity">center</item>
+        <item name="android:textColor">@color/category_item_text</item>
+        <item name="android:textSize">13sp</item>
+        <item name="android:textStyle">bold</item>
+    </style>
+
     <!-- 输入框 -->
     <style name="Input">
         <item name="android:layout_width">match_parent</item>

@@ -26,10 +26,12 @@ public final class TriggerContract {
     public static final String METHOD_START = "start_call";
     public static final String METHOD_QUERY = "query_result";
     public static final String METHOD_HEALTH = "health";
+    public static final String METHOD_STATE = "state";
 
     /** 来电接听接口 */
     public static final String METHOD_ANSWER = "answer_call";
     public static final String METHOD_INCOMING = "incoming_call";
+    public static final String METHOD_END = "end_call";
 
     /** 微信进程内部回传结果的方法名 */
     public static final String METHOD_REPORT = "report_result";
@@ -37,6 +39,10 @@ public final class TriggerContract {
     public static final String METHOD_VOIP_INCOMING = "report_voip_incoming";
     public static final String METHOD_VOIP_STATE = "report_voip_state";
     public static final String METHOD_VOIP_POLL = "poll_voip_command";
+    /** 微信进程执行完接听/拒接/挂断后确认命令，允许模块进程清理租约 */
+    public static final String METHOD_VOIP_ACK = "ack_voip_command";
+    /** 微信进程上报当前界面形态：full / banner / mini */
+    public static final String METHOD_VOIP_SURFACE = "report_voip_surface";
 
     /** Provider 参数：调用方 Token 与 JSON 内容 */
     public static final String EXTRA_AUTH = "auth";
@@ -65,9 +71,12 @@ public final class TriggerContract {
     public static final String VS_MISSED = "MISSED";
     public static final String VS_ENDED = "ENDED";
     public static final String VS_ANSWER_FAILED = "ANSWER_FAILED";
+    public static final String VS_REJECTED = "REJECTED";
 
-    /** 接听命令，供微信进程轮询 */
+    /** 接听 / 拒绝 / 挂断命令，供微信进程轮询 */
     public static final String COMMAND_ANSWER = "answer";
+    public static final String COMMAND_REJECT = "reject";
+    public static final String COMMAND_HANGUP = "hangup";
 
     /** 错误码 */
     public static final String E_UNAUTHORIZED = "UNAUTHORIZED";
@@ -104,6 +113,8 @@ public final class TriggerContract {
     public static final String K_TIMEOUT = "timeout_sec";
     public static final String K_CALLBACK_HOSTS = "callback_hosts";
     public static final String K_ALLOWED_PACKAGES = "allowed_packages";
+    /** 可选 IP/CIDR 白名单，逗号或换行分隔；留空表示不限制来源 */
+    public static final String K_ALLOWED_IPS = "allowed_ips";
     public static final String K_LAST_HOOK_REPORT = "last_hook_report";
 
     /** 微信来电播报 */
@@ -196,6 +207,17 @@ public final class TriggerContract {
         return value == null ? "" : value.trim();
     }
 
+    /** 可选 IP/CIDR 白名单，空字符串表示允许所有来源（仍需 Token） */
+    public static String allowedIps(Context context) {
+        var value = prefs(context).getString(K_ALLOWED_IPS, "");
+        return value == null ? "" : value.trim();
+    }
+
+    public static void setAllowedIps(Context context, String value) {
+        prefs(context).edit().putString(K_ALLOWED_IPS, value == null ? "" : value.trim())
+            .commit();
+    }
+
     public static long lastHookReport(Context context) {
         return prefs(context).getLong(K_LAST_HOOK_REPORT, 0L);
     }
@@ -284,6 +306,7 @@ public final class TriggerContract {
             case VS_MISSED:
             case VS_ENDED:
             case VS_ANSWER_FAILED:
+            case VS_REJECTED:
                 return true;
             default:
                 return false;

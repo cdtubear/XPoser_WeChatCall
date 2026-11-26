@@ -4,9 +4,11 @@ import android.app.Activity;
 import android.os.Handler;
 import android.os.Looper;
 
+import com.cdtubear.xpwechatcall.hook.VoipHook;
 import com.zgcwkj.comm.LogHelp;
 import com.zgcwkj.comm.TriggerContract;
 import com.zgcwkj.comm.VoipReporter;
+import android.app.AndroidAppHelper;
 
 import java.util.Collections;
 import java.util.Map;
@@ -54,9 +56,16 @@ public final class IncomingCallMonitor {
     private static volatile boolean sNativeVideo;
     private static volatile long sNativeAt;
     private static volatile boolean sNativeUsed;
+    private static volatile long sOverlayIdAt;
     private static volatile String sNativeCallId = "";
+    /** 这一通电话第一次被识别的时间，call_id 稳定后不再随界面变化 */
+    private static volatile long sNativeStartedAt;
+    /** 当前通话界面形态：full / banner / mini，仅用于诊断 */
+    private static volatile String sSurface = "";
     /** 来电通知是否还在，最小化/锁屏导致 Activity 销毁时用它区分“通话还在” */
     private static volatile boolean sCallAlive;
+    /** 这一通是否已经真正接听，挂断时据此上报 ENDED 而不是 MISSED */
+    private static volatile boolean sAnswered;
 
     private IncomingCallMonitor() {
     }
@@ -69,13 +78,160 @@ public final class IncomingCallMonitor {
         return sCallAlive;
     }
 
+    /** 这一通是否已经真正接通（音频模式已切到通话） */
+    public static boolean isAnswered() {
+        return sAnswered;
+    }
+
     /** 当前是否有一通已识别的来电（用于判断音频模式变化是不是接听） */
     public static boolean hasCall() {
         return !sNativeCallId.isEmpty() || hasActiveSession();
     }
 
     public static String getCallId() {
-        return sNativeCallId;
+        if (!sNativeCallId.isEmpty()) {
+            return sNativeCallId;
+        }
+        synchronized (SESSIONS) {
+            for (var session : SESSIONS.values()) {
+                if (!session.done && !session.destroyed) {
+                    return session.id;
+                }
+            }
+        }
+        return "";
+    }
+
+    /**
+     * 当前这一通电话的识别时间，供微信进程内的通知过滤/兜底判断使用。
+     * 不要在这里读 VoipStore：它属于模块 App 进程的私有 prefs。
+     */
+    public static long getCallStartedAt() {
+        if (sNativeStartedAt > 0) {
+            return sNativeStartedAt;
+        }
+        synchronized (SESSIONS) {
+            for (var session : SESSIONS.values()) {
+                if (!session.done && !session.destroyed) {
+                    return session.startedAt;
+                }
+            }
+        }
+        return 0L;
+    }
+
+    public static String getCallName() {
+        if (!sNativeName.isEmpty()) {
+            return sNativeName;
+        }
+        synchronized (SESSIONS) {
+            for (var session : SESSIONS.values()) {
+                if (!session.done && !session.destroyed) {
+                    return session.name;
+                }
+            }
+        }
+        return "";
+    }
+
+    public static String getSurface() {
+        return sSurface;
+    }
+
+    public static void setSurface(String surface) {
+        sSurface = surface == null ? "" : surface;
+    }
+
+    /**
+     * 指定 call_id 是否仍然属于当前这一通电话。
+     * 用于阻止上一通的 answer/end 重试链在新来电上继续点击。
+     */
+    public static boolean isCurrent(String id) {
+        if (id == null || id.isEmpty()) {
+            return false;
+        }
+        if (id.equals(sNativeCallId)) {
+            return true;
+        }
+        synchronized (SESSIONS) {
+            for (var session : SESSIONS.values()) {
+                if (!session.done && !session.destroyed && id.equals(session.id)) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    /** 当前通话是否处于 AudioManager 通话模式 */
+    public static boolean isAudioInCall(android.content.Context context) {
+        try {
+            var am = (android.media.AudioManager) context
+                .getSystemService(android.content.Context.AUDIO_SERVICE);
+            return am != null
+                && am.getMode() == android.media.AudioManager.MODE_IN_COMMUNICATION;
+        } catch (Throwable ignored) {
+            return false;
+        }
+    }
+
+    /**
+     * 悬浮横幅 / 小窗：没有 Activity，也没有可读的来电通知，
+     * 从窗口里的文字识别出联系人并建立 call_id，接口才能工作。
+     */
+    public static void noteOverlayCall(android.content.Context context, String name,
+                                       boolean video, boolean ringing) {
+        if (context == null) {
+            return;
+        }
+        var clean = name == null ? "" : name.trim();
+        if (clean.isEmpty()) {
+            clean = "微信通话";
+        }
+        var now = System.currentTimeMillis();
+        // 这里运行在微信进程，不能读模块 App 的 VoipStore；call_id 只由本进程的
+        // 会话状态决定。上一通结束时 noteCallGone() 已清空 ID，不会误复用。
+        var sameCall = !sNativeCallId.isEmpty() && now - sNativeAt < 45_000L;
+        if (ringing && !sNativeCallId.isEmpty()
+            && (!clean.equals(sNativeName) || !sameCall)) {
+            // 联系人变了或上一通已经超时，按新来电处理
+            sNativeCallId = "";
+            sAnswered = false;
+            sCallAlive = false;
+        }
+        sNativeName = clean;
+        sNativeVideo = video;
+        sNativeAt = now;
+        sCallAlive = true;
+        if (ringing) {
+            // 悬浮横幅/小窗没有 Activity.onResume，必须在这里拉起命令轮询，
+            // 否则接口虽然入队，但微信进程里没人执行 answer/end。
+            VoipHook.ensureAnswerWatch();
+        }
+        if (sAnswered) {
+            if (!sNativeCallId.isEmpty()) {
+                VoipReporter.reportState(context, sNativeCallId,
+                    TriggerContract.VS_ANSWERED, "overlay call still connected");
+            }
+            return;
+        }
+        if (sNativeCallId.isEmpty()) {
+            sNativeCallId = "voip_float_" + now + "_"
+                + Integer.toHexString(clean.hashCode());
+            sNativeStartedAt = now;
+            sOverlayIdAt = now;
+            sNativeUsed = true;
+            LogHelp.i(TAG, "voip overlay incoming name=" + clean
+                + " video=" + video + " id=" + sNativeCallId);
+            VoipReporter.reportIncoming(context, sNativeCallId, clean, video, now);
+        } else if (ringing) {
+            // 同一通电话的通知/界面刷新只续命，不换 call_id、不重复播报
+            VoipReporter.reportIncoming(context, sNativeCallId, clean, video,
+                sNativeStartedAt > 0 ? sNativeStartedAt : now);
+        } else {
+            VoipReporter.reportState(context, sNativeCallId,
+                TriggerContract.VS_ANSWERED, "overlay call connected");
+        }
     }
 
     /**
@@ -83,11 +239,13 @@ public final class IncomingCallMonitor {
      * 避免接听后进入 7 秒间隙，挂断时又补播一轮。
      */
     public static void noteAnswered(android.content.Context context) {
-        if (context == null || sNativeCallId.isEmpty()) {
+        var id = getCallId();
+        if (context == null || id.isEmpty()) {
             return;
         }
-        LogHelp.i(TAG, "voip answered by audio mode id=" + sNativeCallId);
-        VoipReporter.reportState(context, sNativeCallId,
+        LogHelp.i(TAG, "voip answered by audio mode id=" + id);
+        sAnswered = true;
+        VoipReporter.reportState(context, id,
             TriggerContract.VS_ANSWERED, "audio mode in call");
     }
 
@@ -97,10 +255,14 @@ public final class IncomingCallMonitor {
      */
     public static void noteCallGone(android.content.Context context) {
         var hadCall = sNativeAt > 0 || !sNativeCallId.isEmpty();
+        var answered = sAnswered;
         sCallAlive = false;
+        sAnswered = false;
         var notifId = sNativeCallId;
         sNativeCallId = "";
         sNativeAt = 0;
+        sNativeStartedAt = 0;
+        sSurface = "";
         sNativeUsed = true;
         synchronized (SESSIONS) {
             for (var session : SESSIONS.values()) {
@@ -109,9 +271,10 @@ public final class IncomingCallMonitor {
                 }
                 session.done = true;
                 hadCall = true;
+                answered = answered || session.accepted;
                 if (context != null) {
                     VoipReporter.reportState(context, session.id,
-                        session.accepted ? TriggerContract.VS_ENDED
+                        answered ? TriggerContract.VS_ENDED
                             : TriggerContract.VS_MISSED,
                         "call notification cancelled");
                 }
@@ -119,7 +282,8 @@ public final class IncomingCallMonitor {
         }
         if (context != null && !notifId.isEmpty()) {
             VoipReporter.reportState(context, notifId,
-                TriggerContract.VS_MISSED, "call notification cancelled");
+                answered ? TriggerContract.VS_ENDED : TriggerContract.VS_MISSED,
+                "call notification cancelled");
         }
         if (hadCall) {
             LogHelp.i(TAG, "voip notification gone, stop announcing");
@@ -167,6 +331,12 @@ public final class IncomingCallMonitor {
         if (context == null || sNativeCallId.isEmpty() || sNativeName.isEmpty()) {
             return;
         }
+        if (sAnswered) {
+            // 已接通的视频通话微信仍会周期性刷新通知，不能再用 incoming 把状态打回 RINGING
+            VoipReporter.reportState(context, sNativeCallId,
+                TriggerContract.VS_ANSWERED, "call still connected");
+            return;
+        }
         VoipReporter.reportIncoming(context, sNativeCallId, sNativeName,
             sNativeVideo, System.currentTimeMillis());
     }
@@ -175,6 +345,17 @@ public final class IncomingCallMonitor {
                                                 String name, boolean video) {
         var now = System.currentTimeMillis();
         var cleanName = name == null ? "" : name.trim();
+        if (sAnswered && !sNativeCallId.isEmpty()) {
+            // 接听后通知内容会从“邀请你通话”变成“通话中”，但 call_id 不变；
+            // 这里必须保持 ANSWERED，否则 /v1/end 会误判为没有接通
+            sNativeAt = now;
+            sNativeVideo = video;
+            if (context != null) {
+                VoipReporter.reportState(context, sNativeCallId,
+                    TriggerContract.VS_ANSWERED, "call still connected");
+            }
+            return;
+        }
         // 响铃期间微信会反复发提醒通知：沿用同一个 call_id，只续命不重复播报
         if (!sNativeCallId.isEmpty() && now - sNativeAt < 45_000L
             && sNativeName.equals(cleanName)) {
@@ -190,6 +371,8 @@ public final class IncomingCallMonitor {
         sNativeVideo = video;
         sNativeAt = now;
         sNativeUsed = false;
+        sAnswered = false;
+        sNativeStartedAt = now;
         sNativeCallId = "voip_notif_" + now + "_"
             + Integer.toHexString(sNativeName.hashCode());
         LogHelp.i(TAG, "voip notification incoming name=" + sNativeName
@@ -246,6 +429,8 @@ public final class IncomingCallMonitor {
         if (existing != null && !existing.done) {
             return;
         }
+        // 新一通来电：即使通知 Hook 没拿到，也要启动独立接听轮询
+        VoipHook.ensureAnswerWatch();
         // 界面文字可能比 onResume 稍晚出现，分几次扫描
         for (var phase = 0; phase < 4; phase++) {
             final var index = phase;
@@ -260,30 +445,55 @@ public final class IncomingCallMonitor {
         var session = get(activity);
         if (session == null) {
             LogHelp.i(TAG, "voip activity destroyed without session");
-            if (sCallAlive) {
-                // 只是窗口被最小化/锁屏，来电通知还在，保留本轮通话
-                return;
+            if (!sCallAlive) {
+                // 页面销毁可能只是最小化成小窗，不能立刻清 id；
+                // 用延迟空闲检查收尾，避免接口变成 BUSY
+                scheduleIdleCheck(AndroidAppHelper.currentApplication());
             }
-            // 锁屏/通知式来电可能没有 session，这里也要清掉上一通的 call_id，
-            // 否则同一联系人 45 秒内再打进来会被当成重复通知而不播报
-            sNativeCallId = "";
-            sNativeAt = 0;
-            sNativeUsed = true;
             return;
         }
         session.destroyed = true;
         if (!session.reported) {
-            // 通话页销毁不等于挂断：最小化/锁屏也会销毁。真正的结束由
-            // VoipService.stopSelf / 通知撤销来判定，这里不再直接停播报。
+            // 通话页销毁不等于挂断：最小化也会销毁。真正的结束由通知撤销 /
+            // 服务停止 / 延迟空闲检查判定。
             LogHelp.i(TAG, "voip activity destroyed, wait for call end signal");
         }
         remove(activity);
         if (!sCallAlive) {
-            // 通话页结束，清掉本轮通知 call_id，下一通重新生成
-            sNativeCallId = "";
-            sNativeAt = 0;
-            sNativeUsed = true;
+            // 小窗状态下仍要保留 id，接口和小窗按钮才能继续工作
+            scheduleIdleCheck(AndroidAppHelper.currentApplication());
         }
+    }
+
+    /** 通话页消失后延迟判定是否真的结束；小窗/最小化期间提醒通知会持续续命 */
+    private static void scheduleIdleCheck(android.content.Context context) {
+        var id = getCallId();
+        if (context == null || id.isEmpty()) {
+            return;
+        }
+        MAIN.postDelayed(() -> {
+            if (!id.equals(getCallId())) {
+                return;
+            }
+            if (hasActiveSession() || isAudioInCall(context)) {
+                return;
+            }
+            if (System.currentTimeMillis() - sNativeAt < 6_000L) {
+                // 微信的“通话中”提醒还在刷新，说明通话/小窗还活着
+                return;
+            }
+            LogHelp.i(TAG, "voip idle, treat call as ended id=" + id);
+            var answered = sAnswered;
+            sCallAlive = false;
+            sAnswered = false;
+            if (id.equals(sNativeCallId)) {
+                sNativeCallId = "";
+                sNativeAt = 0;
+            }
+            VoipReporter.reportState(context, id,
+                answered ? TriggerContract.VS_ENDED : TriggerContract.VS_MISSED,
+                "call page and notification idle");
+        }, 8_000L);
     }
 
     /**
@@ -321,8 +531,22 @@ public final class IncomingCallMonitor {
         if (!info.fromText) {
             sNativeUsed = true;
         }
+        var displayName = info.name;
+        if ((displayName.isEmpty() || "最近".equals(displayName)
+            || "通话".equals(displayName) || "微信".equals(displayName))
+            && !sNativeName.isEmpty()) {
+            displayName = sNativeName;
+        }
         var sessionId = sNativeCallId.isEmpty() ? newCallId() : sNativeCallId;
-        var session = new Session(sessionId, info.name, info.video, info.fromText,
+        if (sNativeCallId.isEmpty()) {
+            // 没有通知也能从通话页拿到 id：后台轮询和接口命令必须用同一个 id
+            sNativeCallId = sessionId;
+            sNativeName = displayName;
+            sNativeVideo = info.video;
+            sNativeAt = System.currentTimeMillis();
+        }
+        sCallAlive = true;
+        var session = new Session(sessionId, displayName, info.video, info.fromText,
             System.currentTimeMillis());
         put(activity, session);
         LogHelp.i(TAG, "voip detected phase=" + phase + " name=" + session.name
@@ -340,18 +564,8 @@ public final class IncomingCallMonitor {
         var deadline = session.startedAt + RING_MAX_MS;
         while (!session.done && !session.destroyed
             && System.currentTimeMillis() < deadline) {
-            var command = VoipReporter.pollCommand(activity, session.id);
-            if (TriggerContract.COMMAND_ANSWER.equals(command)) {
-                var ok = clickAccept(activity);
-                if (ok) {
-                    session.accepted = true;
-                    finish(activity, session, TriggerContract.VS_ANSWERED, "answered by api");
-                } else {
-                    finish(activity, session, TriggerContract.VS_ANSWER_FAILED,
-                        "接听 button not found");
-                }
-                return;
-            }
+            // 接听/拒接/挂断统一由 VoipHook 的常驻轮询执行并做结果校验，
+            // 这里只负责上报来电和等待会话结束，避免两个轮询同时取命令。
             try {
                 Thread.sleep(POLL_MS);
             } catch (InterruptedException e) {
@@ -359,7 +573,7 @@ public final class IncomingCallMonitor {
                 return;
             }
         }
-        if (!session.done && !session.destroyed) {
+        if (!session.done && !session.destroyed && !sAnswered) {
             finish(activity, session, TriggerContract.VS_MISSED, "ring timeout");
         }
     }
@@ -415,6 +629,28 @@ public final class IncomingCallMonitor {
     }
 
     /**
+     * 在主线程点击拒接/挂断并等待结果
+     */
+    private static boolean clickEnd(Activity activity, boolean reject) {
+        var ok = new AtomicBoolean();
+        var latch = new CountDownLatch(1);
+        MAIN.post(() -> {
+            try {
+                ok.set(reject ? IncomingCallUi.reject(activity)
+                    : IncomingCallUi.hangup(activity));
+            } finally {
+                latch.countDown();
+            }
+        });
+        try {
+            latch.await(2, TimeUnit.SECONDS);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
+        return ok.get();
+    }
+
+    /**
      * 只上报一次状态，避免轮询线程与监听线程重复回传
      */
     private static void finish(Activity activity, Session session, String state, String detail) {
@@ -426,6 +662,18 @@ public final class IncomingCallMonitor {
             session.done = true;
         }
         VoipReporter.reportState(activity, session.id, state, detail);
+        if (TriggerContract.VS_ANSWERED.equals(state)) {
+            sAnswered = true;
+        }
+        // 超时/取消/失败后清掉当前来电，否则同一联系人再次打进来会沿用旧 call_id，
+        // 被当成重复通知（fresh=false）而不播报、也不启动后台接听轮询
+        if (!TriggerContract.VS_ANSWERED.equals(state)
+            && session.id.equals(sNativeCallId)) {
+            sNativeCallId = "";
+            sNativeAt = 0;
+            sCallAlive = false;
+            sNativeUsed = true;
+        }
         LogHelp.i(TAG, "voip finish id=" + session.id + " state=" + state
             + " detail=" + detail);
     }
@@ -458,3 +706,4 @@ public final class IncomingCallMonitor {
         SESSIONS.remove(activity);
     }
 }
+

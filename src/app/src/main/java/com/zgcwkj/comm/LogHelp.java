@@ -9,6 +9,8 @@ import java.nio.charset.StandardCharsets;
 import java.text.SimpleDateFormat;
 import java.util.Date;
 import java.util.Locale;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 /**
  * 统一处理应用日志输出
@@ -21,6 +23,13 @@ public class LogHelp {
 
     /** 日志文件保留的最大行数 */
     private static final int MAX_LINES = 100;
+
+    /** 单线程落盘，避免 HTTP/Binder 线程各自同步读写同一个日志文件 */
+    private static final ExecutorService WRITER = Executors.newSingleThreadExecutor(r -> {
+        var thread = new Thread(r, "xp-log-writer");
+        thread.setDaemon(true);
+        return thread;
+    });
 
     private LogHelp() {
     }
@@ -73,21 +82,38 @@ public class LogHelp {
         if (!sEnabled || dir == null) {
             return;
         }
+        final var line = buildLine(priority, tag, message, throwable);
+        final var targetDir = dir;
+        WRITER.execute(() -> appendAndTrim(targetDir, line));
+    }
+
+    private static String buildLine(int priority, String tag, String message,
+                                    Throwable throwable) {
+        var time = new SimpleDateFormat("MM-dd HH:mm:ss.SSS", Locale.getDefault())
+            .format(new Date());
+        var sb = new StringBuilder();
+        sb.append(time).append(" ").append(levelName(priority)).append("/")
+            .append(tag).append(": ").append(message);
+        if (throwable != null) {
+            sb.append("\n").append(Log.getStackTraceString(throwable));
+        }
+        sb.append("\n");
+        return sb.toString();
+    }
+
+    /**
+     * 只在单写线程里追加并裁剪，任何异常都静默忽略。
+     */
+    private static void appendAndTrim(File dir, String line) {
         try {
             if (!dir.exists()) {
                 dir.mkdirs();
             }
             var day = new SimpleDateFormat("yyyyMMdd", Locale.getDefault()).format(new Date());
             var file = new File(dir, day + ".log");
-            var time = new SimpleDateFormat("MM-dd HH:mm:ss.SSS", Locale.getDefault()).format(new Date());
-            var sb = new StringBuilder();
-            sb.append(time).append(" ").append(levelName(priority)).append("/").append(tag).append(": ").append(message);
-            if (throwable != null) {
-                sb.append("\n").append(Log.getStackTraceString(throwable));
-            }
-            sb.append("\n");
-            try (var writer = new OutputStreamWriter(new FileOutputStream(file, true), StandardCharsets.UTF_8)) {
-                writer.write(sb.toString());
+            try (var writer = new OutputStreamWriter(
+                new FileOutputStream(file, true), StandardCharsets.UTF_8)) {
+                writer.write(line);
             }
             trim(file);
         } catch (Throwable ignored) {

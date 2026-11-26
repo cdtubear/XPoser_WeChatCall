@@ -85,9 +85,12 @@ public class TriggerSettingsActivity extends Activity {
     private EditText etTimeout;
     private EditText etCallback;
     private EditText etPackages;
+    private EditText etAllowedIps;
     private LinearLayout llBtDevices;
     private TextView tvBtDevicesEmpty;
     private TextView tvUpdateVersion;
+    private TextView tvDiag;
+    private int currentCategory;
     private TextView tvUpdateStatus;
     private ProgressBar pbUpdate;
     private Button btnUpdate;
@@ -102,8 +105,11 @@ public class TriggerSettingsActivity extends Activity {
     private final Runnable devicePoll = new Runnable() {
         @Override
         public void run() {
+            // 服务可能被通知栏、看门狗或保存动作重启，状态需要持续跟随真实运行态
+            updateStatus();
             updateBtStatus();
             renderBtDevices();
+            renderDiagnostics();
             deviceHandler.postDelayed(this, DEVICE_POLL_MS);
         }
     };
@@ -117,6 +123,7 @@ public class TriggerSettingsActivity extends Activity {
         bindViews();
         applyInsets();
         bindBottomNav();
+        bindCategories();
         loadSettings();
         bindActions();
     }
@@ -138,6 +145,7 @@ public class TriggerSettingsActivity extends Activity {
         refreshKeepAliveAsync();
         renderUpdateState();
         renderVoipStatus();
+        renderDiagnostics();
         // 已连接设备详情需要实时刷新
         deviceHandler.removeCallbacks(devicePoll);
         deviceHandler.postDelayed(devicePoll, DEVICE_POLL_MS);
@@ -169,9 +177,11 @@ public class TriggerSettingsActivity extends Activity {
         etTimeout = findViewById(R.id.et_timeout);
         etCallback = findViewById(R.id.et_callback);
         etPackages = findViewById(R.id.et_packages);
+        etAllowedIps = findViewById(R.id.et_allowed_ips);
         llBtDevices = findViewById(R.id.ll_bt_devices);
         tvBtDevicesEmpty = findViewById(R.id.tv_bt_devices_empty);
         tvUpdateVersion = findViewById(R.id.tv_update_version);
+        tvDiag = findViewById(R.id.tv_diag);
         tvUpdateStatus = findViewById(R.id.tv_update_status);
         pbUpdate = findViewById(R.id.pb_update);
         btnUpdate = findViewById(R.id.btn_update);
@@ -180,6 +190,36 @@ public class TriggerSettingsActivity extends Activity {
     /**
      * 底部导航：设置页高亮「设置」，首页/日志回到 MainActivity 对应 Tab
      */
+    /**
+     * 设置项分五个分类，每次只展示当前分类，避免一页塞满所有配置。
+     */
+    private void bindCategories() {
+        var cats = SettingsSections.CATEGORIES;
+        for (var i = 0; i < cats.length; i++) {
+            final var index = i;
+            findViewById(cats[i]).setOnClickListener(v -> selectCategory(index));
+        }
+        // 每次进入固定停在「服务」，避免分类状态被意外恢复
+        selectCategory(0);
+    }
+
+    private void selectCategory(int index) {
+        currentCategory = index;
+        var cats = SettingsSections.CATEGORIES;
+        var pages = SettingsSections.PAGES;
+        for (var i = 0; i < cats.length; i++) {
+            findViewById(cats[i]).setSelected(i == index);
+            findViewById(pages[i]).setVisibility(i == index ? View.VISIBLE : View.GONE);
+        }
+        var scroll = findViewById(R.id.scroll);
+        if (scroll != null) {
+            scroll.scrollTo(0, 0);
+        }
+        if (index == 4) {
+            renderDiagnostics();
+        }
+    }
+
     private void bindBottomNav() {
         findViewById(R.id.tab_home).setOnClickListener(v -> openMain(MainActivity.TAB_HOME));
         findViewById(R.id.tab_log).setOnClickListener(v -> openMain(MainActivity.TAB_LOG));
@@ -259,6 +299,7 @@ public class TriggerSettingsActivity extends Activity {
         etTimeout.setText(String.valueOf(TriggerContract.timeoutSec(this)));
         etCallback.setText(TriggerContract.callbackHosts(this));
         etPackages.setText(TriggerContract.allowedPackages(this));
+        etAllowedIps.setText(TriggerContract.allowedIps(this));
         updateStatus();
         updateBtStatus();
         renderBtDevices();
@@ -272,12 +313,27 @@ public class TriggerSettingsActivity extends Activity {
         findViewById(R.id.btn_save).setOnClickListener(v -> saveAndApply());
         findViewById(R.id.btn_test).setOnClickListener(v -> testStatus());
         findViewById(R.id.btn_root).setOnClickListener(v -> checkRoot());
+        findViewById(R.id.btn_hint_toggle).setOnClickListener(v -> {
+            var show = tvHint.getVisibility() != View.VISIBLE;
+            tvHint.setVisibility(show ? View.VISIBLE : View.GONE);
+            ((TextView) findViewById(R.id.tv_hint_toggle_state))
+                .setText(show ? "收起" : "展开");
+        });
         findViewById(R.id.btn_battery).setOnClickListener(v -> requestBatteryWhitelist());
         findViewById(R.id.btn_autostart).setOnClickListener(v ->
             KeepAliveHelper.openAutoStartSettings(this));
         findViewById(R.id.btn_bt_uuid).setOnClickListener(v -> copyBluetoothUuids());
         findViewById(R.id.btn_bt_help).setOnClickListener(v -> showBluetoothHelp());
         btnUpdate.setOnClickListener(v -> onUpdateClicked());
+        findViewById(R.id.btn_diag_refresh).setOnClickListener(v -> renderDiagnostics());
+        findViewById(R.id.btn_diag_copy).setOnClickListener(v -> {
+            var text = tvDiag == null ? "" : String.valueOf(tvDiag.getText());
+            var manager = (ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
+            if (manager != null && !text.isEmpty()) {
+                manager.setPrimaryClip(ClipData.newPlainText("XpWeChatCall diag", text));
+                toast("诊断信息已复制");
+            }
+        });
         findViewById(R.id.btn_update_page).setOnClickListener(v ->
             UpdateManager.openReleasesPage(this));
         findViewById(R.id.btn_voip_test).setOnClickListener(v -> {
@@ -286,7 +342,7 @@ public class TriggerSettingsActivity extends Activity {
                 return;
             }
             if (!TriggerContract.voipSound(this)) {
-                toast("播报声音已关闭，请先打开声音开关");
+                toast("声音总开关已关闭，请先打开声音再试听");
                 return;
             }
             VoipAnnouncer.preview(this);
@@ -312,6 +368,7 @@ public class TriggerSettingsActivity extends Activity {
             if (!isChecked) {
                 VoipAnnouncer.silence(this);
             }
+            VoipAnnouncer.applySoundMode(this, isChecked);
             renderVoipStatus();
         });
         swEnable.setOnCheckedChangeListener((buttonView, isChecked) -> {
@@ -398,6 +455,8 @@ public class TriggerSettingsActivity extends Activity {
                 etCallback.getText().toString().trim())
             .putString(TriggerContract.K_ALLOWED_PACKAGES,
                 etPackages.getText().toString().trim())
+            .putString(TriggerContract.K_ALLOWED_IPS,
+                etAllowedIps.getText().toString().trim())
             .commit();
 
         // 先停止旧服务，确保新地址/端口/蓝牙状态生效
@@ -635,7 +694,8 @@ public class TriggerSettingsActivity extends Activity {
             + "\n\n指令为 UTF-8 JSON，以 \\n 结尾，单帧不超过 1024 字节：\n"
             + "{\"token\":\"<TOKEN>\",\"action\":\"call\","
             + "\"wxid\":\"wxid_abc123\",\"type\":\"video\"}\n\n"
-            + "可用 action：call / query / health / friends / resolve / ping / help\n\n"
+            + "{\"token\":\"<TOKEN>\",\"action\":\"end\"}\n\n"
+            + "可用 action：call / query / health / friends / resolve / incoming / answer / end / ping / help\n\n"
             + "响应直接通过 TX Notify 返回；超过 MTU 时自动分片，"
             + "格式为 @序号/总数:内容，按序号拼接即可。\n\n"
             + "通话结束后会额外收到终态：\n"
@@ -841,11 +901,17 @@ public class TriggerSettingsActivity extends Activity {
             + "  -H \"Authorization: Bearer <TOKEN>\" \\\n"
             + "  -H \"Content-Type: application/json\" \\\n"
             + "  -d '{\"call_id\":\"可选，来自 /v1/incoming\"}'\n\n"
+            + "结束微信通话（拒接 / 挂断）\n"
+            + "curl -X POST " + base + "/v1/end \\\n"
+            + "  -H \"Authorization: Bearer <TOKEN>\" \\\n"
+            + "  -H \"Content-Type: application/json\" \\\n"
+            + "  -d '{\"call_id\":\"可选\"}'\n\n"
             + "蓝牙触发（BLE）\n"
             + "Service: " + BtProtocol.SERVICE_UUID + "\n"
             + "RX: " + BtProtocol.RX_UUID + "\n"
             + "TX: " + BtProtocol.TX_UUID + "\n"
-            + "{\"token\":\"<TOKEN>\",\"action\":\"call\",\"name\":\"张三\",\"type\":\"video\"}\n\n"
+            + "{\"token\":\"<TOKEN>\",\"action\":\"call\",\"name\":\"张三\",\"type\":\"video\"}\n"
+            + "{\"token\":\"<TOKEN>\",\"action\":\"end\"}\n\n"
             + "注意：手机必须已解锁（或仅滑动锁），微信必须已登录。\n"
             + "SUCCESS 表示本机已触发通话界面，不代表对方已接听。");
     }
@@ -883,6 +949,65 @@ public class TriggerSettingsActivity extends Activity {
     /**
      * 显示最近一通微信来电，便于确认 Hook 与播报是否生效
      */
+    /**
+     * 诊断页：把真正影响三态接听/挂断的运行时信息集中到一处，便于远程排查。
+     */
+    private void renderDiagnostics() {
+        if (tvDiag == null || currentCategory != 4) {
+            return;
+        }
+        // su 检测可能等待 10 秒，绝不能放在 UI 线程；这里只读缓存并后台刷新
+        RootShell.checkRootAsync(this);
+        try {
+            var state = TriggerApi.state(this);
+            var voip = state.optJSONObject("voip");
+            var sb = new StringBuilder();
+            sb.append("版本      ").append(BuildConfig.VERSION_NAME)
+                .append(" (").append(BuildConfig.VERSION_CODE).append(")\n");
+            sb.append("服务      ").append(state.optBoolean("enabled") ? "开" : "关")
+                .append("  HTTP ").append(state.optBoolean("http_running") ? "运行" : "停止")
+                .append("  BLE ").append(state.optBoolean("bt_running") ? "运行" : "停止")
+                .append("\n");
+            sb.append("Root      ").append(state.optBoolean("root") ? "可用" : "不可用")
+                .append("  微信 ").append(state.optBoolean("wechat_installed") ? "已安装" : "未安装")
+                .append("\n");
+            var hookAt = state.optLong("last_hook_report", 0L);
+            var hookText = hookAt <= 0 ? "无"
+                : new java.text.SimpleDateFormat("MM-dd HH:mm:ss",
+                    java.util.Locale.getDefault()).format(new java.util.Date(hookAt));
+            sb.append("Hook      ").append(hookText).append("\n");
+            sb.append("命令      epoch=").append(state.optLong("command_epoch", 0L))
+                .append(" id=").append(state.optString("command_id", "")).append("\n");
+            if (voip == null) {
+                sb.append("通话      无\n");
+            } else {
+                sb.append("通话      ").append(voip.optString("state", ""))
+                    .append("  ").append(voip.optString("name", "未知"))
+                    .append("  ").append(voip.optString("type", ""))
+                    .append("\n");
+                sb.append("call_id   ").append(voip.optString("id", "")).append("\n");
+                sb.append("surface   ").append(voip.optString("surface", "")).append("\n");
+                sb.append("detail    ").append(voip.optString("detail", "")).append("\n");
+            }
+            sb.append("接口      GET /v1/state  /v1/health\n");
+            sb.append("          POST /v1/answer  /v1/end\n");
+            sb.append("Token     ").append(mask(TriggerContract.token(this))).append("\n");
+            tvDiag.setText(sb.toString());
+        } catch (Throwable e) {
+            tvDiag.setText("诊断读取失败：" + e);
+        }
+    }
+
+    private static String mask(String value) {
+        if (value == null || value.isEmpty()) {
+            return "未设置";
+        }
+        if (value.length() <= 8) {
+            return "***";
+        }
+        return value.substring(0, 4) + "…" + value.substring(value.length() - 4);
+    }
+
     private void renderVoipStatus() {
         if (tvVoipStatus == null) {
             return;
@@ -924,10 +1049,10 @@ public class TriggerSettingsActivity extends Activity {
                 .format(new Date(updated))
             : "";
         tvVoipStatus.setText(String.format(Locale.ROOT,
-            "最近来电：%s（%s）\n状态：%s  %s\n播报：%s  声音：%s",
+            "最近来电：%s（%s）\n状态：%s  %s\n播报：%s  声音总开关：%s",
             name, video ? "视频" : "语音", stateText, time,
             TriggerContract.voipAnnounce(this) ? "已开启" : "已关闭",
-            TriggerContract.voipSound(this) ? "已开启" : "已关闭"));
+            TriggerContract.voipSound(this) ? "已开启（最大）" : "已关闭（静音）"));
     }
 
     private void renderUpdateState() {

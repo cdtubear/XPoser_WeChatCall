@@ -262,7 +262,8 @@ public final class TriggerApi {
             response.put("bt_service_uuid", BtProtocol.SERVICE_UUID.toString());
             response.put("bt_rx_uuid", BtProtocol.RX_UUID.toString());
             response.put("bt_tx_uuid", BtProtocol.TX_UUID.toString());
-            response.put("root", RootShell.cachedRootStatus());
+            response.put("root", RootShell.cachedRootGranted());
+            response.put("root_status", RootShell.cachedRootStatus());
             response.put("wechat_installed", RootShell.isWeChatInstalled(context));
             response.put("friends_count", FriendIndex.count(context));
             response.put("friends_synced_at", FriendSync.lastSyncTime(context));
@@ -335,6 +336,7 @@ public final class TriggerApi {
             started = now;
         }
         var fresh = VoipStore.onIncoming(context, id, name, type, started);
+        TriggerService.invalidateStateCache();
         TriggerContract.setLastHookReport(context, now);
         if (fresh && TriggerContract.voipAnnounce(context)) {
             VoipAnnouncer.announce(context, name, type);
@@ -366,6 +368,7 @@ public final class TriggerApi {
             detail = detail.substring(0, 200);
         }
         VoipStore.onState(context, id, state, detail);
+        TriggerService.invalidateStateCache();
         TriggerContract.setLastHookReport(context, System.currentTimeMillis());
         if (!TriggerContract.VS_RINGING.equals(state)) {
             VoipAnnouncer.stop(context);
@@ -374,14 +377,54 @@ public final class TriggerApi {
     }
 
     /**
-     * 微信进程轮询接听命令，取走后命令立即失效
+     * 微信进程上报当前界面形态，便于 /v1/state 远程诊断。
      */
-    public static String pollVoipCommand(Context context, String callId) {
+    public static JSONObject reportVoipSurface(Context context, JSONObject request) {
+        var id = request == null ? "" : request.optString("call_id", "").trim();
+        var surface = request == null ? "" : request.optString("surface", "").trim();
+        if (!TriggerContract.isValidRequestId(id) || surface.isEmpty()) {
+            return error(TriggerContract.E_BAD_REQUEST, "invalid call_id or surface");
+        }
+        VoipStore.onSurface(context, id, surface);
+        TriggerService.invalidateStateCache();
+        return with(ok(), "surface", surface);
+    }
+
+    /**
+     * 微信进程领取接听/挂断命令。返回 command 和 command_id，执行完必须 ack。
+     */
+    public static JSONObject claimVoipCommand(Context context, String callId) {
         var id = callId == null ? "" : callId.trim();
         if (!TriggerContract.isValidRequestId(id)) {
-            return "";
+            return with(with(error(TriggerContract.E_BAD_REQUEST, "invalid call_id"),
+                "command", ""), "command_id", "");
         }
-        return VoipStore.takeCommand(context, id);
+        var claim = VoipStore.claimCommand(context, id);
+        var response = ok();
+        with(response, "command", claim == null ? "" : claim.command);
+        with(response, "command_id", claim == null ? "" : claim.commandId);
+        return response;
+    }
+
+    /**
+     * 微信进程确认命令已经执行完，释放租约；旧 command_id 不允许 ACK 新命令。
+     */
+    public static JSONObject ackVoipCommand(Context context, JSONObject request) {
+        var id = request == null ? "" : request.optString("call_id", "").trim();
+        var commandId = request == null ? "" : request.optString("command_id", "").trim();
+        if (!TriggerContract.isValidRequestId(id) || commandId.isEmpty()) {
+            return error(TriggerContract.E_BAD_REQUEST, "invalid call_id or command_id");
+        }
+        return with(ok(), "acked", VoipStore.ackCommand(context, id, commandId));
+    }
+
+    /**
+     * 兼容旧调用：领取并返回命令文本；不再推荐，因为无法 ACK。
+     */
+    public static String pollVoipCommand(Context context, String callId) {
+        var claim = VoipStore.claimCommand(context,
+            callId == null ? "" : callId.trim());
+        return claim == null ? "" : claim.command;
     }
 
     /**
@@ -426,10 +469,77 @@ public final class TriggerApi {
         }
         LogHelp.i(TAG, "voip answer accepted id=" + id
             + " source=" + (fromBluetooth ? "bt" : "http"));
+        TriggerService.invalidateStateCache();
         var response = ok();
         with(response, "call_id", id);
+        with(response, "command_id", VoipStore.lastCommandId(context));
+        with(response, "command_epoch", VoipStore.commandEpoch(context));
         with(response, "state", TriggerContract.S_ACCEPTED);
         with(response, "action", "answer");
+        with(response, "source", fromBluetooth ? BtProtocol.SOURCE_BT : "http");
+        return response;
+    }
+
+    /**
+     * 结束当前通话：响铃中自动拒接，已接通自动挂断。
+     */
+    public static JSONObject endCall(Context context, JSONObject request,
+                                     boolean fromBluetooth) {
+        var current = VoipStore.current(context);
+        var state = current == null ? "" : current.optString("state", "");
+        if (TriggerContract.VS_RINGING.equals(state)) {
+            return commandIncoming(context, request, fromBluetooth,
+                TriggerContract.COMMAND_REJECT, "reject", true);
+        }
+        if (TriggerContract.VS_ANSWERED.equals(state)) {
+            return commandIncoming(context, request, fromBluetooth,
+                TriggerContract.COMMAND_HANGUP, "hangup", false);
+        }
+        var response = error(TriggerContract.E_BUSY,
+            "no ringing or connected WeChat call to end");
+        with(response, "state", state);
+        with(response, "incoming", current == null ? JSONObject.NULL : current);
+        return response;
+    }
+
+    private static JSONObject commandIncoming(Context context, JSONObject request,
+                                              boolean fromBluetooth, String command,
+                                              String action, boolean requireRinging) {
+        if (fromBluetooth) {
+            if (!TriggerContract.isBtEnabled(context)) {
+                return error(TriggerContract.E_DISABLED, "bluetooth trigger is disabled");
+            }
+        } else if (!TriggerContract.isEnabled(context)) {
+            return error(TriggerContract.E_DISABLED, "external trigger is disabled");
+        }
+        var requested = request == null ? "" : request.optString("call_id", "").trim();
+        if (!requested.isEmpty() && !TriggerContract.isValidRequestId(requested)) {
+            return error(TriggerContract.E_BAD_REQUEST, "invalid call_id");
+        }
+        var id = requireRinging
+            ? (TriggerContract.COMMAND_REJECT.equals(command)
+                ? VoipStore.requestReject(context, requested)
+                : VoipStore.requestAnswer(context, requested))
+            : VoipStore.requestHangup(context, requested);
+        if (id == null) {
+            var current = VoipStore.current(context);
+            var response = error(requireRinging
+                ? TriggerContract.E_NOT_RINGING : TriggerContract.E_BUSY,
+                requireRinging ? "no incoming WeChat call is ringing"
+                    : "no connected WeChat call to hang up");
+            with(response, "state", current == null ? "" : current.optString("state", ""));
+            with(response, "incoming", current == null ? JSONObject.NULL : current);
+            return response;
+        }
+        LogHelp.i(TAG, "voip " + action + " accepted id=" + id
+            + " source=" + (fromBluetooth ? "bt" : "http"));
+        TriggerService.invalidateStateCache();
+        var response = ok();
+        with(response, "call_id", id);
+        with(response, "command_id", VoipStore.lastCommandId(context));
+        with(response, "command_epoch", VoipStore.commandEpoch(context));
+        with(response, "state", TriggerContract.S_ACCEPTED);
+        with(response, "action", action);
         with(response, "source", fromBluetooth ? BtProtocol.SOURCE_BT : "http");
         return response;
     }
@@ -442,6 +552,35 @@ public final class TriggerApi {
         var response = ok();
         with(response, "incoming", current == null ? JSONObject.NULL : current);
         with(response, "state", current == null ? "" : current.optString("state", ""));
+        return response;
+    }
+
+    /**
+     * 轻量只读状态：给轮询和诊断页用，避免 /v1/incoming 被限流。
+     */
+    public static JSONObject state(Context context) {
+        var response = ok();
+        try {
+            response.put("module_version", BuildConfig.VERSION_NAME);
+            response.put("enabled", TriggerContract.isEnabled(context));
+            response.put("http_running", TriggerService.isHttpRunning());
+            response.put("bt_running", TriggerService.isBluetoothRunning());
+            response.put("bt_connected", TriggerService.bluetoothConnectedCount());
+            response.put("root", RootShell.cachedRootGranted());
+            response.put("root_status", RootShell.cachedRootStatus());
+            response.put("wechat_installed", RootShell.isWeChatInstalled(context));
+            response.put("last_hook_report", TriggerContract.lastHookReport(context));
+            response.put("rate_limit", TriggerContract.rateLimit(context));
+            response.put("command_id", VoipStore.lastCommandId(context));
+            response.put("command_epoch", VoipStore.commandEpoch(context));
+            var voip = VoipStore.current(context);
+            response.put("voip", voip == null ? JSONObject.NULL : voip);
+            response.put("state", voip == null ? "" : voip.optString("state", ""));
+            response.put("surface", voip == null ? "" : voip.optString("surface", ""));
+            response.put("incoming", voip == null ? JSONObject.NULL : voip);
+        } catch (Exception e) {
+            return error(TriggerContract.E_INTERNAL, e.toString());
+        }
         return response;
     }
 

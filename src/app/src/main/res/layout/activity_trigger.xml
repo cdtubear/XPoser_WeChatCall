@@ -6,14 +6,12 @@
     android:background="@color/background"
     android:orientation="vertical">
 
-    <!-- 状态栏占位 -->
     <View
         android:id="@+id/status_bar_spacer"
         android:layout_width="match_parent"
         android:layout_height="0dp"
         android:background="@color/primary" />
 
-    <!-- 顶部标题栏 -->
     <LinearLayout
         android:id="@+id/title_bar"
         android:layout_width="match_parent"
@@ -47,6 +45,55 @@
             android:textSize="11sp" />
     </LinearLayout>
 
+    <HorizontalScrollView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:background="@color/surface"
+        android:fillViewport="true"
+        android:scrollbars="none">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:gravity="center_vertical"
+            android:orientation="horizontal"
+            android:paddingStart="12dp"
+            android:paddingEnd="12dp"
+            android:paddingTop="6dp"
+            android:paddingBottom="6dp">
+
+            <TextView
+                android:id="@+id/cat_service"
+                style="@style/CategoryItem"
+                android:text="服务" />
+
+            <TextView
+                android:id="@+id/cat_connection"
+                style="@style/CategoryItem"
+                android:text="连接" />
+
+            <TextView
+                android:id="@+id/cat_voip"
+                style="@style/CategoryItem"
+                android:text="来电" />
+
+            <TextView
+                android:id="@+id/cat_trigger"
+                style="@style/CategoryItem"
+                android:text="触发" />
+
+            <TextView
+                android:id="@+id/cat_diagnostic"
+                style="@style/CategoryItem"
+                android:text="诊断" />
+
+            <TextView
+                android:id="@+id/cat_about"
+                style="@style/CategoryItem"
+                android:text="关于" />
+        </LinearLayout>
+    </HorizontalScrollView>
+
     <ScrollView
         android:id="@+id/scroll"
         android:layout_width="match_parent"
@@ -60,484 +107,666 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="vertical"
-            android:paddingStart="14dp"
-            android:paddingEnd="14dp"
-            android:paddingTop="4dp"
-            android:paddingBottom="18dp">
+            android:paddingStart="16dp"
+            android:paddingEnd="16dp"
+            android:paddingTop="6dp"
+            android:paddingBottom="16dp">
 
-            <!-- 服务总开关 -->
-            <LinearLayout style="@style/Card">
+            <!-- 服务 -->
+            <LinearLayout
+                android:id="@+id/page_service"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical">
 
-                <Switch
-                    android:id="@+id/sw_enable"
-                    style="@style/SwitchRow"
-                    android:text="启用外部触发服务"
-                    android:textStyle="bold" />
+                <LinearLayout style="@style/Card">
 
-                <TextView
-                    style="@style/Hint"
-                    android:text="开启后会常驻一个前台通知，webhook 才能随时调用。修改监听地址或端口后请点击下方「保存并重启」。" />
-            </LinearLayout>
-
-            <!-- 保活 / 自启动 -->
-            <TextView
-                style="@style/SectionTitle"
-                android:text="保活 / 自启动" />
-
-            <LinearLayout style="@style/Card">
-
-                <Switch
-                    android:id="@+id/sw_watchdog"
-                    style="@style/SwitchRow"
-                    android:text="启用 root 看门狗（推荐）" />
-
-                <TextView
-                    android:id="@+id/tv_keepalive"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="6dp"
-                    android:fontFamily="monospace"
-                    android:lineSpacingExtra="2dp"
-                    android:textColor="@color/text_hint"
-                    android:textSize="12sp" />
-
-                <TextView
-                    style="@style/Hint"
-                    android:text="看门狗写入 /data/adb/service.d，每 30 秒检查一次端口，App 进程被杀后自动拉起服务。需要 Magisk / KernelSU / APatch。MIUI / HyperOS 还需把省电策略设为「无限制」并允许自启动。" />
-
-                <LinearLayout
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="12dp"
-                    android:orientation="horizontal">
-
-                    <Button
-                        android:id="@+id/btn_battery"
-                        style="@style/ButtonSecondary"
-                        android:text="电池白名单" />
-
-                    <Button
-                        android:id="@+id/btn_autostart"
-                        style="@style/ButtonSecondary"
-                        android:layout_marginStart="10dp"
-                        android:text="自启动设置" />
-                </LinearLayout>
-            </LinearLayout>
-
-            <!-- 访问 Token -->
-            <TextView
-                style="@style/SectionTitle"
-                android:text="访问 Token" />
-
-            <LinearLayout style="@style/Card">
-
-                <TextView
-                    android:id="@+id/tv_token"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:background="@drawable/bg_card_flat"
-                    android:fontFamily="monospace"
-                    android:padding="12dp"
-                    android:textColor="@color/text_primary"
-                    android:textIsSelectable="true"
-                    android:textSize="12sp" />
-
-                <LinearLayout
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="10dp"
-                    android:orientation="horizontal">
-
-                    <Button
-                        android:id="@+id/btn_copy_token"
-                        style="@style/ButtonSecondary"
-                        android:text="复制 Token" />
-
-                    <Button
-                        android:id="@+id/btn_reset_token"
-                        style="@style/ButtonSecondary"
-                        android:layout_marginStart="10dp"
-                        android:text="重置 Token" />
-                </LinearLayout>
-
-                <TextView
-                    style="@style/Hint"
-                    android:text="所有接口（HTTP、ContentProvider、蓝牙）都必须携带 Token，校验通过才会执行真实动作。重置后旧的调用方会立即失效。" />
-            </LinearLayout>
-
-            <!-- 监听地址 -->
-            <TextView
-                style="@style/SectionTitle"
-                android:text="监听地址" />
-
-            <LinearLayout style="@style/Card">
-
-                <EditText
-                    android:id="@+id/et_bind"
-                    style="@style/Input"
-                    android:hint="0.0.0.0"
-                    android:inputType="text" />
-
-                <TextView
-                    style="@style/Hint"
-                    android:text="0.0.0.0 = 监听所有网卡；建议填 Tailscale/WireGuard 地址，避免暴露在公共 Wi-Fi。" />
-
-                <EditText
-                    android:id="@+id/et_port"
-                    style="@style/Input"
-                    android:layout_marginTop="10dp"
-                    android:hint="端口"
-                    android:inputType="number" />
-
-                <TextView
-                    style="@style/Hint"
-                    android:text="默认 8790。修改后需要重启服务。" />
-            </LinearLayout>
-
-            <!-- 触发行为 -->
-            <TextView
-                style="@style/SectionTitle"
-                android:text="触发行为" />
-
-            <LinearLayout style="@style/Card">
-
-                <Switch
-                    android:id="@+id/sw_unlock"
-                    style="@style/SwitchRow"
-                    android:text="锁屏时自动唤醒并解锁（仅滑动锁）" />
-
-                <TextView
-                    style="@style/Hint"
-                    android:text="通过 root 执行 input / wm 命令。设置了密码、PIN 或图案锁时无法自动解锁，会返回 DEVICE_LOCKED。" />
-
-                <EditText
-                    android:id="@+id/et_rate"
-                    style="@style/Input"
-                    android:layout_marginTop="10dp"
-                    android:hint="每分钟最大请求数"
-                    android:inputType="number" />
-
-                <EditText
-                    android:id="@+id/et_timeout"
-                    style="@style/Input"
-                    android:layout_marginTop="10dp"
-                    android:hint="结果超时秒数"
-                    android:inputType="number" />
-
-                <TextView
-                    style="@style/Hint"
-                    android:text="超时后状态变为 FAILED / TIMEOUT。限流填 0 表示不限。" />
-            </LinearLayout>
-
-            <!-- 蓝牙触发 -->
-            <TextView
-                style="@style/SectionTitle"
-                android:text="蓝牙触发（BLE）" />
-
-            <LinearLayout style="@style/Card">
-
-                <Switch
-                    android:id="@+id/sw_bt"
-                    style="@style/SwitchRow"
-                    android:text="启用蓝牙触发（手机作为 BLE 外设）" />
-
-                <TextView
-                    android:id="@+id/tv_bt_status"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="6dp"
-                    android:fontFamily="monospace"
-                    android:lineSpacingExtra="2dp"
-                    android:textColor="@color/text_hint"
-                    android:textSize="12sp" />
-
-                <TextView
-                    style="@style/Hint"
-                    android:text="@string/bt_token_required_tip" />
-
-                <!-- 已连接设备详情 -->
-                <LinearLayout
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="14dp"
-                    android:gravity="center_vertical"
-                    android:orientation="horizontal">
-
-                    <TextView
-                        android:layout_width="0dp"
-                        android:layout_height="wrap_content"
-                        android:layout_weight="1"
-                        android:text="@string/bt_connected_devices"
-                        android:textColor="@color/text_primary"
-                        android:textSize="14sp"
+                    <Switch
+                        android:id="@+id/sw_enable"
+                        style="@style/SwitchRow"
+                        android:text="启用外部触发服务"
+                        android:textSize="16sp"
                         android:textStyle="bold" />
 
                     <TextView
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:background="@drawable/bg_pill_info"
-                        android:paddingStart="10dp"
-                        android:paddingEnd="10dp"
-                        android:paddingTop="3dp"
-                        android:paddingBottom="3dp"
-                        android:text="实时刷新"
-                        android:textColor="@color/info"
-                        android:textSize="10sp" />
+                        style="@style/RowSubtitle"
+                        android:text="Webhook / HTTP 入口，开启后常驻前台通知" />
                 </LinearLayout>
 
-                <LinearLayout
-                    android:id="@+id/ll_bt_devices"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:orientation="vertical" />
+                <LinearLayout style="@style/Card">
 
-                <TextView
-                    android:id="@+id/tv_bt_devices_empty"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="8dp"
-                    android:background="@drawable/bg_card_flat"
-                    android:gravity="center"
-                    android:padding="16dp"
-                    android:text="@string/bt_no_connected_devices"
-                    android:textColor="@color/text_hint"
-                    android:textSize="12sp" />
+                    <Switch
+                        android:id="@+id/sw_watchdog"
+                        style="@style/SwitchRow"
+                        android:text="Root 看门狗"
+                        android:textSize="16sp"
+                        android:textStyle="bold" />
 
-                <TextView
-                    style="@style/Hint"
-                    android:layout_marginTop="14dp"
-                    android:text="协议：Nordic UART Service。设备向 RX 写入 UTF-8 JSON（以换行结尾），手机通过 TX Notify 返回响应与通话终态结果。每条指令必须携带 token。" />
+                    <TextView
+                        style="@style/RowSubtitle"
+                        android:text="进程被杀后自动拉起，需要 Magisk / KernelSU / APatch" />
 
-                <LinearLayout
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="12dp"
-                    android:orientation="horizontal">
+                    <TextView
+                        android:id="@+id/tv_keepalive"
+                        style="@style/ValueBox" />
 
-                    <Button
-                        android:id="@+id/btn_bt_uuid"
-                        style="@style/ButtonSecondary"
-                        android:text="复制 UUID" />
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="12dp"
+                        android:orientation="horizontal">
 
-                    <Button
-                        android:id="@+id/btn_bt_help"
-                        style="@style/ButtonSecondary"
-                        android:layout_marginStart="10dp"
-                        android:text="协议说明" />
+                        <Button
+                            android:id="@+id/btn_battery"
+                            style="@style/ButtonSecondary"
+                            android:text="电池白名单" />
+
+                        <Button
+                            android:id="@+id/btn_autostart"
+                            style="@style/ButtonSecondary"
+                            android:layout_marginStart="10dp"
+                            android:text="自启动设置" />
+                    </LinearLayout>
+
+                    <TextView
+                        style="@style/RowCaption"
+                        android:text="MIUI / HyperOS 建议将省电策略设为「无限制」" />
                 </LinearLayout>
             </LinearLayout>
 
-            <!-- 微信来电播报 -->
-            <TextView
-                style="@style/SectionTitle"
-                android:text="微信来电播报" />
+            <!-- 连接 -->
+            <LinearLayout
+                android:id="@+id/page_connection"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:visibility="gone">
 
-            <LinearLayout style="@style/Card">
+                <LinearLayout style="@style/Card">
 
-                <Switch
-                    android:id="@+id/sw_voip_announce"
-                    style="@style/SwitchRow"
-                    android:text="来电时播报联系人名字" />
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:gravity="center_vertical"
+                        android:orientation="horizontal">
 
-                <Switch
-                    android:id="@+id/sw_voip_sound"
-                    style="@style/SwitchRow"
-                    android:text="播报声音" />
+                        <TextView
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:text="访问 Token"
+                            android:textColor="@color/text_primary"
+                            android:textSize="16sp"
+                            android:textStyle="bold" />
 
-                <TextView
-                    style="@style/Hint"
-                    android:layout_marginTop="4dp"
-                    android:text="关闭「播报声音」后仍会发来电通知、仍可接听，但不会语音播报、没有提示音，微信来电铃声也会完全静音；通话结束后自动恢复铃声。" />
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:background="@drawable/bg_pill_info"
+                            android:paddingStart="10dp"
+                            android:paddingEnd="10dp"
+                            android:paddingTop="3dp"
+                            android:paddingBottom="3dp"
+                            android:text="必填"
+                            android:textColor="@color/info"
+                            android:textSize="10sp" />
+                    </LinearLayout>
 
-                <TextView
-                    android:id="@+id/tv_voip_status"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="6dp"
-                    android:fontFamily="monospace"
-                    android:lineSpacingExtra="2dp"
-                    android:textColor="@color/text_hint"
-                    android:textSize="12sp" />
+                    <TextView
+                        android:id="@+id/tv_token"
+                        style="@style/ValueBox"
+                        android:textIsSelectable="true" />
 
-                <TextView
-                    style="@style/Hint"
-                    android:text="微信来电界面出现时，模块会用系统语音播报「张三，微信视频来电」，并发一条带「接听」按钮的通知。播报依赖系统 TTS 中文引擎，通知需要通知权限。" />
+                    <TextView
+                        style="@style/RowCaption"
+                        android:text="HTTP、ContentProvider、蓝牙共用，重置后旧调用方立即失效" />
 
-                <LinearLayout
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="12dp"
-                    android:orientation="horizontal">
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="12dp"
+                        android:orientation="horizontal">
+
+                        <Button
+                            android:id="@+id/btn_copy_token"
+                            style="@style/ButtonSecondary"
+                            android:text="复制 Token" />
+
+                        <Button
+                            android:id="@+id/btn_reset_token"
+                            style="@style/ButtonSecondary"
+                            android:layout_marginStart="10dp"
+                            android:text="重置 Token" />
+                    </LinearLayout>
+
+                    <View style="@style/Divider" />
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="horizontal">
+
+                        <LinearLayout
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="2"
+                            android:orientation="vertical">
+
+                            <TextView
+                                style="@style/InputLabel"
+                                android:text="监听地址" />
+
+                            <EditText
+                                android:id="@+id/et_bind"
+                                style="@style/Input"
+                                android:hint="0.0.0.0"
+                                android:inputType="text" />
+                        </LinearLayout>
+
+                        <LinearLayout
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_marginStart="10dp"
+                            android:layout_weight="1"
+                            android:orientation="vertical">
+
+                            <TextView
+                                style="@style/InputLabel"
+                                android:text="端口" />
+
+                            <EditText
+                                android:id="@+id/et_port"
+                                style="@style/Input"
+                                android:hint="8790"
+                                android:inputType="number" />
+                        </LinearLayout>
+                    </LinearLayout>
+
+                    <TextView
+                        style="@style/RowCaption"
+                        android:text="0.0.0.0 监听所有网卡；建议使用内网或 Tailscale 地址" />
+
+                    <TextView
+                        style="@style/InputLabel"
+                        android:layout_marginTop="12dp"
+                        android:text="来源 IP 白名单（可选）" />
+
+                    <EditText
+                        android:id="@+id/et_allowed_ips"
+                        style="@style/Input"
+                        android:hint="192.168.8.10, 192.168.8.0/24"
+                        android:inputType="text" />
+
+                    <TextView
+                        style="@style/RowCaption"
+                        android:text="留空允许所有来源；仍必须携带 Token" />
+                </LinearLayout>
+
+                <LinearLayout style="@style/Card">
+
+                    <Switch
+                        android:id="@+id/sw_bt"
+                        style="@style/SwitchRow"
+                        android:text="蓝牙触发（BLE）"
+                        android:textSize="16sp"
+                        android:textStyle="bold" />
+
+                    <TextView
+                        style="@style/RowSubtitle"
+                        android:text="Nordic UART Service；设备写入 JSON，每条指令需带 Token" />
+
+                    <TextView
+                        android:id="@+id/tv_bt_status"
+                        style="@style/ValueBox" />
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="14dp"
+                        android:gravity="center_vertical"
+                        android:orientation="horizontal">
+
+                        <TextView
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:text="@string/bt_connected_devices"
+                            android:textColor="@color/text_primary"
+                            android:textSize="14sp"
+                            android:textStyle="bold" />
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:background="@drawable/bg_pill_info"
+                            android:paddingStart="10dp"
+                            android:paddingEnd="10dp"
+                            android:paddingTop="3dp"
+                            android:paddingBottom="3dp"
+                            android:text="实时"
+                            android:textColor="@color/info"
+                            android:textSize="10sp" />
+                    </LinearLayout>
+
+                    <LinearLayout
+                        android:id="@+id/ll_bt_devices"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="vertical" />
+
+                    <TextView
+                        android:id="@+id/tv_bt_devices_empty"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="8dp"
+                        android:background="@drawable/bg_card_flat"
+                        android:gravity="center"
+                        android:padding="16dp"
+                        android:text="@string/bt_no_connected_devices"
+                        android:textColor="@color/text_hint"
+                        android:textSize="12sp" />
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="12dp"
+                        android:orientation="horizontal">
+
+                        <Button
+                            android:id="@+id/btn_bt_uuid"
+                            style="@style/ButtonSecondary"
+                            android:text="复制 UUID" />
+
+                        <Button
+                            android:id="@+id/btn_bt_help"
+                            style="@style/ButtonSecondary"
+                            android:layout_marginStart="10dp"
+                            android:text="协议说明" />
+                    </LinearLayout>
+                </LinearLayout>
+            </LinearLayout>
+
+            <!-- 来电 -->
+            <LinearLayout
+                android:id="@+id/page_voip"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:visibility="gone">
+
+                <LinearLayout style="@style/Card">
+
+                    <Switch
+                        android:id="@+id/sw_voip_announce"
+                        style="@style/SwitchRow"
+                        android:text="播报联系人名字"
+                        android:textSize="16sp"
+                        android:textStyle="bold" />
+
+                    <TextView
+                        style="@style/RowSubtitle"
+                        android:text="用系统 TTS 播报「张三，微信视频来电」" />
+
+                    <View style="@style/Divider" />
+
+                    <Switch
+                        android:id="@+id/sw_voip_sound"
+                        style="@style/SwitchRow"
+                        android:text="声音总开关"
+                        android:textSize="16sp"
+                        android:textStyle="bold" />
+
+                    <TextView
+                        style="@style/RowSubtitle"
+                        android:text="关闭后系统铃声最小并静音，不播报也不响铃" />
+
+                    <TextView
+                        android:id="@+id/tv_voip_status"
+                        style="@style/ValueBox" />
 
                     <Button
                         android:id="@+id/btn_voip_test"
                         style="@style/ButtonSecondary"
+                        android:layout_width="match_parent"
+                        android:layout_marginTop="12dp"
                         android:text="试听播报" />
-                </LinearLayout>
-
-                <TextView
-                    style="@style/Hint"
-                    android:layout_marginTop="14dp"
-                    android:text="接听接口：POST /v1/answer，请求体可带 call_id；查询来电：GET /v1/incoming。也可以直接点通知栏的「接听」。接听依赖微信来电界面处于前台（锁屏时可自动点亮），由模块在微信进程内点击「接听」按钮完成。" />
-            </LinearLayout>
-
-            <!-- 结果回调 -->
-            <TextView
-                style="@style/SectionTitle"
-                android:text="结果回调（可选）" />
-
-            <LinearLayout style="@style/Card">
-
-                <EditText
-                    android:id="@+id/et_callback"
-                    style="@style/Input"
-                    android:hint="允许回调的域名，逗号分隔"
-                    android:inputType="text"
-                    android:maxLines="2" />
-
-                <TextView
-                    style="@style/Hint"
-                    android:text="留空表示不发送回调，只支持轮询。回调带 X-Xp-Signature: sha256=HMAC(请求体, Token)。" />
-
-                <EditText
-                    android:id="@+id/et_packages"
-                    style="@style/Input"
-                    android:layout_marginTop="10dp"
-                    android:hint="Provider 包名白名单，逗号分隔（可选）"
-                    android:inputType="text"
-                    android:maxLines="2" />
-
-                <TextView
-                    style="@style/Hint"
-                    android:text="留空表示只校验 Token。HTTP 接口不受此项影响。" />
-            </LinearLayout>
-
-            <!-- 操作按钮 -->
-            <LinearLayout
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="18dp"
-                android:orientation="horizontal">
-
-                <Button
-                    android:id="@+id/btn_save"
-                    style="@style/ButtonPrimary"
-                    android:text="保存并重启" />
-
-                <Button
-                    android:id="@+id/btn_test"
-                    style="@style/ButtonSecondary"
-                    android:layout_marginStart="10dp"
-                    android:text="测试状态" />
-
-                <Button
-                    android:id="@+id/btn_root"
-                    style="@style/ButtonSecondary"
-                    android:layout_marginStart="10dp"
-                    android:text="检查 root" />
-            </LinearLayout>
-
-            <!-- 版本更新 -->
-            <TextView
-                style="@style/SectionTitle"
-                android:text="版本更新" />
-
-            <LinearLayout style="@style/Card">
-
-                <LinearLayout
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:gravity="center_vertical"
-                    android:orientation="horizontal">
 
                     <TextView
-                        android:id="@+id/tv_update_version"
-                        android:layout_width="0dp"
+                        style="@style/RowCaption"
+                        android:text="接听 POST /v1/answer · 查询 GET /v1/incoming" />
+                </LinearLayout>
+            </LinearLayout>
+
+            <!-- 触发 -->
+            <LinearLayout
+                android:id="@+id/page_trigger"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:visibility="gone">
+
+                <LinearLayout style="@style/Card">
+
+                    <Switch
+                        android:id="@+id/sw_unlock"
+                        style="@style/SwitchRow"
+                        android:text="锁屏时自动唤醒并解锁"
+                        android:textSize="16sp"
+                        android:textStyle="bold" />
+
+                    <TextView
+                        style="@style/RowSubtitle"
+                        android:text="仅支持滑动锁；密码、PIN、图案锁会返回 DEVICE_LOCKED" />
+
+                    <View style="@style/Divider" />
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:layout_weight="1"
-                        android:text="@string/update_current_version"
+                        android:orientation="horizontal">
+
+                        <LinearLayout
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:orientation="vertical">
+
+                            <TextView
+                                style="@style/InputLabel"
+                                android:text="每分钟最大请求数" />
+
+                            <EditText
+                                android:id="@+id/et_rate"
+                                style="@style/Input"
+                                android:hint="0"
+                                android:inputType="number" />
+                        </LinearLayout>
+
+                        <LinearLayout
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_marginStart="10dp"
+                            android:layout_weight="1"
+                            android:orientation="vertical">
+
+                            <TextView
+                                style="@style/InputLabel"
+                                android:text="结果超时（秒）" />
+
+                            <EditText
+                                android:id="@+id/et_timeout"
+                                style="@style/Input"
+                                android:hint="30"
+                                android:inputType="number" />
+                        </LinearLayout>
+                    </LinearLayout>
+
+                    <TextView
+                        style="@style/RowCaption"
+                        android:text="限流填 0 表示不限；超时后状态变为 FAILED / TIMEOUT" />
+                </LinearLayout>
+
+                <LinearLayout style="@style/Card">
+
+                    <TextView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="回调与白名单（可选）"
+                        android:textColor="@color/text_primary"
+                        android:textSize="16sp"
+                        android:textStyle="bold" />
+
+                    <TextView
+                        style="@style/InputLabel"
+                        android:layout_marginTop="14dp"
+                        android:text="回调域名" />
+
+                    <EditText
+                        android:id="@+id/et_callback"
+                        style="@style/Input"
+                        android:hint="example.com，逗号分隔"
+                        android:inputType="text"
+                        android:maxLines="2" />
+
+                    <TextView
+                        style="@style/RowCaption"
+                        android:text="留空只支持轮询；回调签名 X-Xp-Signature: sha256=HMAC(请求体, Token)" />
+
+                    <TextView
+                        style="@style/InputLabel"
+                        android:layout_marginTop="14dp"
+                        android:text="Provider 包名白名单" />
+
+                    <EditText
+                        android:id="@+id/et_packages"
+                        style="@style/Input"
+                        android:hint="com.example.app，逗号分隔"
+                        android:inputType="text"
+                        android:maxLines="2" />
+
+                    <TextView
+                        style="@style/RowCaption"
+                        android:text="留空只校验 Token；HTTP 接口不受影响" />
+                </LinearLayout>
+            </LinearLayout>
+
+            <!-- 诊断 -->
+            <LinearLayout
+                android:id="@+id/page_diagnostic"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:visibility="gone">
+
+                <LinearLayout style="@style/Card">
+
+                    <TextView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="运行状态"
                         android:textColor="@color/text_primary"
                         android:textSize="15sp"
                         android:textStyle="bold" />
 
                     <TextView
-                        android:layout_width="wrap_content"
+                        android:id="@+id/tv_diag"
+                        android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:background="@drawable/bg_pill_info"
-                        android:paddingStart="10dp"
-                        android:paddingEnd="10dp"
-                        android:paddingTop="3dp"
-                        android:paddingBottom="3dp"
-                        android:text="GitHub Releases"
-                        android:textColor="@color/info"
-                        android:textSize="10sp" />
+                        android:layout_marginTop="10dp"
+                        android:fontFamily="monospace"
+                        android:lineSpacingExtra="3dp"
+                        android:text="正在读取…"
+                        android:textColor="@color/text_secondary"
+                        android:textSize="12sp" />
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="12dp"
+                        android:orientation="horizontal">
+
+                        <Button
+                            android:id="@+id/btn_diag_refresh"
+                            style="@style/ButtonSecondary"
+                            android:text="刷新" />
+
+                        <Button
+                            android:id="@+id/btn_diag_copy"
+                            style="@style/ButtonSecondary"
+                            android:text="复制" />
+                    </LinearLayout>
                 </LinearLayout>
-
-                <TextView
-                    android:id="@+id/tv_update_status"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="6dp"
-                    android:fontFamily="monospace"
-                    android:lineSpacingExtra="2dp"
-                    android:text="@string/update_status_idle"
-                    android:textColor="@color/text_hint"
-                    android:textSize="12sp" />
-
-                <ProgressBar
-                    android:id="@+id/pb_update"
-                    style="?android:attr/progressBarStyleHorizontal"
-                    android:layout_width="match_parent"
-                    android:layout_height="6dp"
-                    android:layout_marginTop="10dp"
-                    android:max="100"
-                    android:progressTint="@color/primary"
-                    android:visibility="gone" />
-
-                <LinearLayout
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="12dp"
-                    android:orientation="horizontal">
-
-                    <Button
-                        android:id="@+id/btn_update"
-                        style="@style/ButtonPrimary"
-                        android:text="@string/update_action_check" />
-
-                    <Button
-                        android:id="@+id/btn_update_page"
-                        style="@style/ButtonSecondary"
-                        android:layout_marginStart="10dp"
-                        android:text="@string/update_action_page" />
-                </LinearLayout>
-
-                <TextView
-                    style="@style/Hint"
-                    android:text="@string/update_hint" />
             </LinearLayout>
 
-            <!-- 接口示例 -->
-            <TextView
-                style="@style/SectionTitle"
-                android:text="接口示例" />
+            <!-- 关于 -->
+            <LinearLayout
+                android:id="@+id/page_about"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:visibility="gone">
 
-            <LinearLayout style="@style/Card">
+                <LinearLayout style="@style/Card">
 
-                <TextView
-                    android:id="@+id/tv_hint"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:fontFamily="monospace"
-                    android:lineSpacingExtra="2dp"
-                    android:textColor="@color/text_secondary"
-                    android:textIsSelectable="true"
-                    android:textSize="11sp" />
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:gravity="center_vertical"
+                        android:orientation="horizontal">
+
+                        <TextView
+                            android:id="@+id/tv_update_version"
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:text="@string/update_current_version"
+                            android:textColor="@color/text_primary"
+                            android:textSize="16sp"
+                            android:textStyle="bold" />
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:background="@drawable/bg_pill_info"
+                            android:paddingStart="10dp"
+                            android:paddingEnd="10dp"
+                            android:paddingTop="3dp"
+                            android:paddingBottom="3dp"
+                            android:text="GitHub"
+                            android:textColor="@color/info"
+                            android:textSize="10sp" />
+                    </LinearLayout>
+
+                    <TextView
+                        android:id="@+id/tv_update_status"
+                        style="@style/RowSubtitle"
+                        android:layout_marginTop="6dp"
+                        android:text="@string/update_status_idle" />
+
+                    <ProgressBar
+                        android:id="@+id/pb_update"
+                        style="?android:attr/progressBarStyleHorizontal"
+                        android:layout_width="match_parent"
+                        android:layout_height="6dp"
+                        android:layout_marginTop="10dp"
+                        android:max="100"
+                        android:progressTint="@color/primary"
+                        android:visibility="gone" />
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="12dp"
+                        android:orientation="horizontal">
+
+                        <Button
+                            android:id="@+id/btn_update"
+                            style="@style/ButtonPrimary"
+                            android:text="@string/update_action_check" />
+
+                        <Button
+                            android:id="@+id/btn_update_page"
+                            style="@style/ButtonSecondary"
+                            android:layout_marginStart="10dp"
+                            android:text="@string/update_action_page" />
+                    </LinearLayout>
+
+                    <TextView
+                        style="@style/RowCaption"
+                        android:text="下载后校验包名、版本与签名；安装后需重启微信" />
+                </LinearLayout>
+
+                <LinearLayout style="@style/Card">
+
+                    <LinearLayout
+                        android:id="@+id/btn_hint_toggle"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:background="?android:attr/selectableItemBackground"
+                        android:gravity="center_vertical"
+                        android:orientation="horizontal"
+                        android:paddingTop="4dp"
+                        android:paddingBottom="4dp">
+
+                        <TextView
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:text="HTTP / BLE 调用示例"
+                            android:textColor="@color/text_primary"
+                            android:textSize="16sp"
+                            android:textStyle="bold" />
+
+                        <TextView
+                            android:id="@+id/tv_hint_toggle_state"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:background="@drawable/bg_pill_info"
+                            android:paddingStart="12dp"
+                            android:paddingEnd="12dp"
+                            android:paddingTop="5dp"
+                            android:paddingBottom="5dp"
+                            android:text="展开"
+                            android:textColor="@color/info"
+                            android:textSize="11sp" />
+                    </LinearLayout>
+
+                    <TextView
+                        android:id="@+id/tv_hint"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="12dp"
+                        android:background="@drawable/bg_card_flat"
+                        android:fontFamily="monospace"
+                        android:lineSpacingExtra="3dp"
+                        android:padding="14dp"
+                        android:textColor="@color/text_secondary"
+                        android:textIsSelectable="true"
+                        android:textSize="11sp"
+                        android:visibility="gone" />
+                </LinearLayout>
             </LinearLayout>
         </LinearLayout>
     </ScrollView>
 
-    <!-- 底部导航：首页 / 日志 / 设置 -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:background="@color/surface"
+        android:elevation="8dp"
+        android:orientation="horizontal"
+        android:paddingStart="14dp"
+        android:paddingEnd="14dp"
+        android:paddingTop="10dp"
+        android:paddingBottom="10dp">
+
+        <Button
+            android:id="@+id/btn_save"
+            style="@style/ButtonPrimary"
+            android:layout_width="0dp"
+            android:layout_height="44dp"
+            android:layout_weight="1.6"
+            android:text="保存并重启" />
+
+        <Button
+            android:id="@+id/btn_test"
+            style="@style/ButtonSecondary"
+            android:layout_width="0dp"
+            android:layout_height="44dp"
+            android:layout_marginStart="8dp"
+            android:layout_weight="1"
+            android:text="测试" />
+
+        <Button
+            android:id="@+id/btn_root"
+            style="@style/ButtonSecondary"
+            android:layout_width="0dp"
+            android:layout_height="44dp"
+            android:layout_marginStart="8dp"
+            android:layout_weight="1"
+            android:text="root" />
+    </LinearLayout>
+
     <include
         android:id="@+id/tab_bar"
         layout="@layout/view_bottom_nav"
