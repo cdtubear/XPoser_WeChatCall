@@ -5,7 +5,7 @@
 [![XposedModule](https://img.shields.io/badge/XposedModule-repo-green)](https://github.com/Xposed-Modules-Repo)
 [![Build APK](https://github.com/cdtubear/XPoser_WeChatCall/actions/workflows/build-apk.yml/badge.svg)](https://github.com/cdtubear/XPoser_WeChatCall/actions/workflows/build-apk.yml)
 
-当前版本：**1.2.0**。1.1.3–1.1.38 的更新已合并归档，详见 [CHANGELOG.md](CHANGELOG.md)。
+当前版本：**1.2.1**。本版本完成好友首页、日志页与设置页外壳的界面重构，详见 [CHANGELOG.md](CHANGELOG.md)。
 
 通过 Xposed 模块，在桌面为好友创建独立图标，点击图标一步直达微信视频/语音通话
 

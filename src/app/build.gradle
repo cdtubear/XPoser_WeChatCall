@@ -15,8 +15,8 @@ android {
         applicationId "com.cdtubear.xpwechatcall"
         minSdk 30
         targetSdk 36
-        versionCode 26112732
-        versionName "1.2.0"
+        versionCode 26112733
+        versionName "1.2.1"
     }
 
     // 检查更新与健康检查都需要读取版本号

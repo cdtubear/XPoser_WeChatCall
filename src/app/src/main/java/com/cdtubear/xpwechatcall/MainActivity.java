@@ -1,9 +1,12 @@
 package com.cdtubear.xpwechatcall;
 
+import android.annotation.SuppressLint;
 import android.app.Activity;
 import android.app.AlertDialog;
+import android.animation.ValueAnimator;
 import android.content.Intent;
 import android.net.Uri;
+import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
@@ -11,13 +14,17 @@ import android.text.Editable;
 import android.text.TextWatcher;
 import android.view.LayoutInflater;
 import android.view.View;
+import android.view.ViewGroup;
 import android.view.WindowInsets;
+import android.widget.BaseAdapter;
 import android.widget.EditText;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
+import android.widget.ListView;
 import android.widget.Switch;
 import android.widget.TextView;
 import android.widget.Toast;
+import android.window.OnBackInvokedDispatcher;
 
 import com.zgcwkj.comm.ConfigHelp;
 import com.zgcwkj.comm.Friend;
@@ -56,10 +63,19 @@ public class MainActivity extends Activity {
     private final List<Friend> shown = new ArrayList<>();
     /** 列表行操作回调 */
     private FriendRow.Listener rowListener;
-    /** 好友行容器 */
-    private LinearLayout listContainer;
+    /** 虚拟化列表与状态视图 */
+    private ListView listView;
+    private FriendAdapter adapter;
+    private View listSurface;
+    private View loadingView;
     private View emptyView;
     private View searchEmptyView;
+    private View errorView;
+    private View successBanner;
+    private TextView successText;
+    private TextView errorTitle;
+    private TextView errorText;
+    private TextView friendCount;
     private View pageHome;
     private View pageLog;
     private View tabHomeIcon;
@@ -68,16 +84,31 @@ public class MainActivity extends Activity {
     private View tabLogText;
     private View tabSettingsIcon;
     private View tabSettingsText;
+    private TextView pageTitle;
+    private TextView pageSubtitle;
     private TextView logText;
+    private View logEmptyView;
+    private View logScroll;
     private View btnImport;
+    private View btnImportIcon;
+    private TextView btnImportText;
     private View btnAdd;
     private View btnLogRefresh;
     private View btnLogClear;
     private Switch logSwitch;
     private EditText searchInput;
     private View searchClear;
-    /** 内容不足一屏时把版权信息推到底部的占位 */
-    private View footerSpacer;
+    private View btnEmptyImport;
+    private View btnEmptyAdd;
+    private View btnClearSearch;
+    private View btnRetry;
+    private boolean importing;
+    private Runnable errorRetry;
+    private Runnable hideBanner;
+    private final Handler ui = new Handler(Looper.getMainLooper());
+
+    /** 最近一次错误是否覆盖内容区；搜索或操作成功时清除 */
+    private boolean showingError;
 
     /** 编辑弹窗中的图标预览与当前选中的图标路径 */
     private ImageView dialogIcon;
@@ -94,12 +125,21 @@ public class MainActivity extends Activity {
         setContentView(R.layout.activity_main);
         applyWindowInsets();
 
-        listContainer = findViewById(R.id.list_container);
-        footerSpacer = findViewById(R.id.footer_spacer);
+        listView = findViewById(R.id.list_view);
+        listSurface = findViewById(R.id.list_surface);
+        loadingView = findViewById(R.id.loading_view);
         emptyView = findViewById(R.id.empty_view);
         searchEmptyView = findViewById(R.id.search_empty_view);
+        errorView = findViewById(R.id.error_view);
+        errorTitle = findViewById(R.id.error_title);
+        errorText = findViewById(R.id.error_text);
+        successBanner = findViewById(R.id.success_banner);
+        successText = findViewById(R.id.success_text);
+        friendCount = findViewById(R.id.friend_count);
         pageHome = findViewById(R.id.page_home);
         pageLog = findViewById(R.id.page_log);
+        pageTitle = findViewById(R.id.page_title);
+        pageSubtitle = findViewById(R.id.page_subtitle);
         tabHomeIcon = findViewById(R.id.tab_home_icon);
         tabHomeText = findViewById(R.id.tab_home_text);
         tabLogIcon = findViewById(R.id.tab_log_icon);
@@ -107,11 +147,19 @@ public class MainActivity extends Activity {
         tabSettingsIcon = findViewById(R.id.tab_settings_icon);
         tabSettingsText = findViewById(R.id.tab_settings_text);
         logText = findViewById(R.id.log_text);
+        logEmptyView = findViewById(R.id.log_empty_view);
+        logScroll = findViewById(R.id.log_scroll);
         btnImport = findViewById(R.id.btn_import);
+        btnImportIcon = findViewById(R.id.btn_import_icon);
+        btnImportText = findViewById(R.id.btn_import_text);
         btnAdd = findViewById(R.id.btn_add);
         btnLogRefresh = findViewById(R.id.btn_log_refresh);
         btnLogClear = findViewById(R.id.btn_log_clear);
         logSwitch = findViewById(R.id.log_switch);
+        btnEmptyImport = findViewById(R.id.btn_empty_import);
+        btnEmptyAdd = findViewById(R.id.btn_empty_add);
+        btnClearSearch = findViewById(R.id.btn_clear_search);
+        btnRetry = findViewById(R.id.btn_retry);
 
         var textLogPath = (TextView) findViewById(R.id.log_path);
         textLogPath.setText(logDir.getAbsolutePath());
@@ -119,7 +167,8 @@ public class MainActivity extends Activity {
         // 搜索框：输入即过滤，右侧按钮一键清空
         searchInput = findViewById(R.id.search_input);
         searchClear = findViewById(R.id.search_clear);
-        searchClear.setOnClickListener(v -> searchInput.setText(""));
+        searchClear.setOnClickListener(v -> clearSearch());
+        btnClearSearch.setOnClickListener(v -> clearSearch());
         searchInput.addTextChangedListener(new TextWatcher() {
             @Override
             public void beforeTextChanged(CharSequence s, int start, int count, int after) {
@@ -131,12 +180,26 @@ public class MainActivity extends Activity {
 
             @Override
             public void afterTextChanged(Editable s) {
+                // 用户重新搜索时退出错误态，避免错误视图盖住可恢复的列表
+                showingError = false;
                 refresh();
+                if (listView != null) {
+                    listView.setSelection(0);
+                }
             }
         });
 
         btnAdd.setOnClickListener(v -> showFriendDialog(null));
+        btnEmptyAdd.setOnClickListener(v -> showFriendDialog(null));
         btnImport.setOnClickListener(v -> importFromWeChat());
+        btnEmptyImport.setOnClickListener(v -> importFromWeChat());
+        btnRetry.setOnClickListener(v -> {
+            if (errorRetry != null) {
+                errorRetry.run();
+            } else {
+                importFromWeChat();
+            }
+        });
         btnLogRefresh.setOnClickListener(v -> showLog());
         btnLogClear.setOnClickListener(v -> clearLog());
         findViewById(R.id.tab_home).setOnClickListener(v -> switchTab(TAB_HOME));
@@ -175,9 +238,40 @@ public class MainActivity extends Activity {
         findViewById(R.id.tv_footer).setOnClickListener(v -> startActivity(new Intent(
             Intent.ACTION_VIEW, Uri.parse(getString(R.string.author_url)))));
 
+        adapter = new FriendAdapter();
+        listView.setAdapter(adapter);
+
+        registerBackHandler();
         switchTab(tabFromIntent(getIntent()));
         refresh();
         LogHelp.i("XpWeChatCall", "main page opened, friends=" + friends.size());
+    }
+
+    /**
+     * Android 13+ 使用系统返回手势回调；旧版本继续走 onBackPressed 兼容路径。
+     */
+    private void registerBackHandler() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            getOnBackInvokedDispatcher().registerOnBackInvokedCallback(
+                OnBackInvokedDispatcher.PRIORITY_DEFAULT, this::performBack);
+        }
+    }
+
+    private void performBack() {
+        if (pageLog != null && pageLog.getVisibility() == View.VISIBLE) {
+            switchTab(TAB_HOME);
+            return;
+        }
+        finish();
+    }
+
+    /**
+     * 旧版本返回键兼容。日志页不是独立页面，返回键先回到好友页。
+     */
+    @SuppressLint("GestureBackNavigation")
+    @Override
+    public void onBackPressed() {
+        performBack();
     }
 
     @Override
@@ -210,8 +304,8 @@ public class MainActivity extends Activity {
     /**
      * 沉浸式布局
      *
-     * 绿色标题栏与白色 Tab 栏铺满到屏幕边缘（含状态栏/导航栏区域），
-     * 只有文字与列表内容按系统栏尺寸内缩，这样横屏时系统栏在左右两侧也不会遮住内容。
+     * 标题栏与底部导航延伸到系统栏区域，文字/列表按实际系统栏尺寸内缩，
+     * 横屏时左右系统栏也不会遮住内容。
      */
     private void applyWindowInsets() {
         var root = findViewById(R.id.root);
@@ -220,9 +314,14 @@ public class MainActivity extends Activity {
         var content = findViewById(R.id.content);
         var tabBar = findViewById(R.id.tab_bar);
         var tabHeight = getResources().getDimensionPixelSize(R.dimen.tab_bar_height);
-        // 标题栏原有的左右内边距，系统栏内边距需叠加在它之上
+        // 标题栏/导航原有内边距，系统栏内边距叠加在它之上，避免覆盖内部留白
         var titlePaddingStart = titleBar.getPaddingStart();
         var titlePaddingEnd = titleBar.getPaddingEnd();
+        var titlePaddingTop = titleBar.getPaddingTop();
+        var titlePaddingBottom = titleBar.getPaddingBottom();
+        var tabPaddingStart = tabBar.getPaddingStart();
+        var tabPaddingEnd = tabBar.getPaddingEnd();
+        var tabPaddingTop = tabBar.getPaddingTop();
         root.setOnApplyWindowInsetsListener((view, insets) -> {
             // 刘海屏的挖孔区域也计入，避免内容被遮挡
             var bars = insets.getInsets(
@@ -230,10 +329,11 @@ public class MainActivity extends Activity {
             var spacerParams = spacer.getLayoutParams();
             spacerParams.height = bars.top;
             spacer.setLayoutParams(spacerParams);
-            titleBar.setPaddingRelative(titlePaddingStart + bars.left, 0,
-                titlePaddingEnd + bars.right, 0);
+            titleBar.setPaddingRelative(titlePaddingStart + bars.left, titlePaddingTop,
+                titlePaddingEnd + bars.right, titlePaddingBottom);
             content.setPadding(bars.left, 0, bars.right, 0);
-            tabBar.setPadding(bars.left, 0, bars.right, bars.bottom);
+            tabBar.setPadding(tabPaddingStart + bars.left, tabPaddingTop,
+                tabPaddingEnd + bars.right, bars.bottom + 6);
             var tabParams = tabBar.getLayoutParams();
             tabParams.height = tabHeight + bars.bottom;
             tabBar.setLayoutParams(tabParams);
@@ -252,20 +352,27 @@ public class MainActivity extends Activity {
         var home = tab != TAB_LOG;
         pageHome.setVisibility(home ? View.VISIBLE : View.GONE);
         pageLog.setVisibility(home ? View.GONE : View.VISIBLE);
+        pageTitle.setText(home ? R.string.home_title : R.string.log_title);
+        pageSubtitle.setText(home ? R.string.home_subtitle : R.string.log_subtitle);
+
         var primary = getResources().getColor(R.color.primary);
-        var disabled = getResources().getColor(R.color.text_disabled);
-        ((TextView) tabHomeText).setTextColor(home ? primary : disabled);
-        ((TextView) tabLogText).setTextColor(home ? disabled : primary);
-        ((TextView) tabSettingsText).setTextColor(disabled);
-        tabHomeIcon.setAlpha(home ? 1f : 0.5f);
-        tabLogIcon.setAlpha(home ? 0.5f : 1f);
-        tabSettingsIcon.setAlpha(0.5f);
+        var secondary = getResources().getColor(R.color.text_secondary);
+        var homeTab = findViewById(R.id.tab_home);
+        var logTab = findViewById(R.id.tab_log);
+        var settingsTab = findViewById(R.id.tab_settings);
+        homeTab.setSelected(home);
+        logTab.setSelected(!home);
+        settingsTab.setSelected(false);
+
+        ((TextView) tabHomeText).setTextColor(home ? primary : secondary);
+        ((TextView) tabLogText).setTextColor(home ? secondary : primary);
+        ((TextView) tabSettingsText).setTextColor(secondary);
         ((ImageView) tabHomeIcon).setImageTintList(
-            android.content.res.ColorStateList.valueOf(home ? primary : disabled));
+            android.content.res.ColorStateList.valueOf(home ? primary : secondary));
         ((ImageView) tabLogIcon).setImageTintList(
-            android.content.res.ColorStateList.valueOf(home ? disabled : primary));
+            android.content.res.ColorStateList.valueOf(home ? secondary : primary));
         ((ImageView) tabSettingsIcon).setImageTintList(
-            android.content.res.ColorStateList.valueOf(disabled));
+            android.content.res.ColorStateList.valueOf(secondary));
 
         // 右上角操作随 Tab 切换：首页=导入/添加，日志=刷新/清空
         btnImport.setVisibility(home ? View.VISIBLE : View.GONE);
@@ -283,7 +390,12 @@ public class MainActivity extends Activity {
      */
     private void showLog() {
         var text = LogHelp.readAll();
-        logText.setText(text == null || text.isEmpty() ? getString(R.string.log_empty) : text);
+        var hasLog = text != null && !text.trim().isEmpty();
+        logText.setText(hasLog ? text : "");
+        logEmptyView.setVisibility(hasLog ? View.GONE : View.VISIBLE);
+        if (hasLog) {
+            logText.post(() -> ((android.widget.ScrollView) logScroll).fullScroll(View.FOCUS_DOWN));
+        }
     }
 
     /**
@@ -301,7 +413,7 @@ public class MainActivity extends Activity {
             file.delete();
         }
         showLog();
-        toast(R.string.log_cleared);
+        showSuccess(getString(R.string.log_cleared));
     }
 
     /**
@@ -334,30 +446,108 @@ public class MainActivity extends Activity {
     }
 
     /**
-     * 刷新列表显示和空状态
+     * 刷新列表显示和空状态。
+     * 正常内容、空列表、搜索无结果、错误四种状态互斥，避免内容互相盖住。
      */
     private void refresh() {
         applyFilter();
-        // 复用已有行视图，避免每次输入关键字都重新创建
-        for (var i = 0; i < shown.size(); i++) {
-            var row = i < listContainer.getChildCount() ? listContainer.getChildAt(i) : null;
-            if (row == null) {
-                row = FriendRow.inflate(listContainer);
-                listContainer.addView(row);
-            }
-            FriendRow.bind(row, shown.get(i), rowListener);
+        if (adapter != null) {
+            adapter.notifyDataSetChanged();
         }
-        // 多出来的行不再展示
-        for (var i = shown.size(); i < listContainer.getChildCount(); i++) {
-            listContainer.getChildAt(i).setVisibility(View.GONE);
+        friendCount.setText(getString(R.string.friend_count, friends.size()));
+
+        if (importing || showingError) {
+            return;
         }
+
         var noFriends = friends.isEmpty();
         var hasRows = !shown.isEmpty();
+        listSurface.setVisibility(hasRows ? View.VISIBLE : View.GONE);
+        loadingView.setVisibility(View.GONE);
+        errorView.setVisibility(View.GONE);
         emptyView.setVisibility(noFriends ? View.VISIBLE : View.GONE);
         searchEmptyView.setVisibility(!noFriends && !hasRows ? View.VISIBLE : View.GONE);
-        // 没有好友行时隐藏列表，版权信息始终显示在内容最下面
-        listContainer.setVisibility(hasRows ? View.VISIBLE : View.GONE);
-        footerSpacer.setVisibility(hasRows ? View.VISIBLE : View.GONE);
+    }
+
+    /**
+     * 导入/首次读取时的骨架屏；按钮同步进入 disabled 状态。
+     */
+    private void setImporting(boolean busy) {
+        importing = busy;
+        btnImport.setEnabled(!busy);
+        btnAdd.setEnabled(!busy);
+        btnEmptyImport.setEnabled(!busy);
+        btnImport.setAlpha(busy ? 0.55f : 1f);
+        btnAdd.setAlpha(busy ? 0.55f : 1f);
+        btnImportText.setText(busy ? R.string.action_importing : R.string.action_import_short);
+        btnImportIcon.setVisibility(busy ? View.INVISIBLE : View.VISIBLE);
+
+        if (busy) {
+            showingError = false;
+            listSurface.setVisibility(View.GONE);
+            emptyView.setVisibility(View.GONE);
+            searchEmptyView.setVisibility(View.GONE);
+            errorView.setVisibility(View.GONE);
+            loadingView.setVisibility(View.VISIBLE);
+            friendCount.setText(R.string.action_importing);
+            return;
+        }
+        loadingView.setVisibility(View.GONE);
+        refresh();
+    }
+
+    /**
+     * 错误状态：说明原因并保留一个明确的重试入口。
+     */
+    private void showError(CharSequence message, Runnable retry) {
+        importing = false;
+        showingError = true;
+        setImporting(false);
+        errorRetry = retry;
+        errorTitle.setText(R.string.error_import_title);
+        errorText.setText(message);
+        friendCount.setText("—");
+        listSurface.setVisibility(View.GONE);
+        loadingView.setVisibility(View.GONE);
+        emptyView.setVisibility(View.GONE);
+        searchEmptyView.setVisibility(View.GONE);
+        errorView.setVisibility(View.VISIBLE);
+    }
+
+    /**
+     * 成功反馈：自动消失的轻量 banner；系统关闭动画时直接显示，不强行播放。
+     */
+    private void showSuccess(CharSequence text) {
+        showingError = false;
+        successText.setText(text);
+        successBanner.setVisibility(View.VISIBLE);
+        if (hideBanner != null) {
+            ui.removeCallbacks(hideBanner);
+        }
+        successBanner.animate().cancel();
+        if (!ValueAnimator.areAnimatorsEnabled()) {
+            successBanner.setAlpha(1f);
+            successBanner.setTranslationY(0f);
+        } else {
+            successBanner.setAlpha(0f);
+            successBanner.setTranslationY(-8f);
+            successBanner.animate().alpha(1f).translationY(0f).setDuration(200).start();
+        }
+        hideBanner = () -> {
+            if (!ValueAnimator.areAnimatorsEnabled()) {
+                successBanner.setVisibility(View.GONE);
+                return;
+            }
+            successBanner.animate().alpha(0f).translationY(-8f).setDuration(160)
+                .withEndAction(() -> successBanner.setVisibility(View.GONE)).start();
+        };
+        ui.postDelayed(hideBanner, 2400);
+    }
+
+    private void clearSearch() {
+        showingError = false;
+        searchInput.setText("");
+        refresh();
     }
 
     /**
@@ -375,6 +565,37 @@ public class MainActivity extends Activity {
             }
         }
         searchClear.setVisibility(keyword.isEmpty() ? View.GONE : View.VISIBLE);
+    }
+
+    /**
+     * 虚拟化好友列表：只创建屏幕上可见的行，滚动时复用 convertView。
+     */
+    private class FriendAdapter extends BaseAdapter {
+
+        @Override
+        public int getCount() {
+            return shown.size();
+        }
+
+        @Override
+        public Object getItem(int position) {
+            return shown.get(position);
+        }
+
+        @Override
+        public long getItemId(int position) {
+            return position;
+        }
+
+        @Override
+        public View getView(int position, View convertView, ViewGroup parent) {
+            var row = convertView;
+            if (row == null) {
+                row = FriendRow.inflate(parent);
+            }
+            FriendRow.bind(row, (Friend) getItem(position), rowListener);
+            return row;
+        }
     }
 
     /**
@@ -402,7 +623,7 @@ public class MainActivity extends Activity {
      */
     private void createShortcut(Friend friend) {
         var ok = ShortcutHelp.requestShortcut(this, friend);
-        toast(ok ? R.string.toast_shortcut_requested : R.string.toast_shortcut_unsupported);
+        showSuccess(getString(ok ? R.string.toast_shortcut_requested : R.string.toast_shortcut_unsupported));
     }
 
     /**
@@ -416,7 +637,7 @@ public class MainActivity extends Activity {
                 friends.remove(friend);
                 saveFriends();
                 refresh();
-                toast(R.string.toast_deleted);
+                showSuccess(getString(R.string.toast_deleted));
             })
             .setNegativeButton(R.string.action_cancel, null)
             .show();
@@ -480,6 +701,7 @@ public class MainActivity extends Activity {
             }
             saveFriends();
             refresh();
+            showSuccess(getString(R.string.toast_saved));
             dialog.dismiss();
         }));
         dialog.show();
@@ -529,7 +751,7 @@ public class MainActivity extends Activity {
         }
         var friend = new Friend(nickname, wxid, ShortcutHelp.CALL_VIDEO);
         friend.iconPath = pendingIconPath;
-        var bitmap = FriendSync.loadIcon(this, friend, 0);
+        var bitmap = FriendSync.loadIcon(this, friend, 160);
         if (bitmap != null) {
             dialogIcon.setImageBitmap(bitmap);
         } else {
@@ -544,9 +766,18 @@ public class MainActivity extends Activity {
      * 触发 Hook 读取并回传，再轮询等待回传结果。
      */
     private void importFromWeChat() {
+        if (importing) {
+            return;
+        }
         var before = FriendSync.lastSyncTime(this);
+        setImporting(true);
         if (!launchWeChatForImport()) {
-            toast(R.string.toast_wechat_missing);
+            setImporting(false);
+            if (friends.isEmpty()) {
+                showError(getString(R.string.toast_wechat_missing), this::importFromWeChat);
+            } else {
+                toast(R.string.toast_wechat_missing);
+            }
             return;
         }
         toast(R.string.toast_import_waiting);
@@ -579,7 +810,7 @@ public class MainActivity extends Activity {
             doImportFromWeChat();
             return;
         }
-        new Handler(Looper.getMainLooper()).postDelayed(() -> {
+        ui.postDelayed(() -> {
             if (FriendSync.lastSyncTime(this) > before) {
                 doImportFromWeChat();
             } else {
@@ -596,13 +827,13 @@ public class MainActivity extends Activity {
     private void doImportFromWeChat() {
         var json = FriendSync.read(this);
         if (json == null) {
-            toast(R.string.toast_import_none);
+            importFailed();
             return;
         }
         try {
             var array = new JSONObject(json).optJSONArray(FriendSync.KEY_FRIENDS);
             if (array == null || array.length() == 0) {
-                toast(R.string.toast_import_none);
+                importFailed();
                 return;
             }
             // 保留已选的通话类型，避免镜像导入后需要重新设置
@@ -632,10 +863,23 @@ public class MainActivity extends Activity {
                 friends.add(new Friend(name, username, callType));
             }
             saveFriends();
+            setImporting(false);
             refresh();
-            toast(getString(R.string.toast_import_done, friends.size()));
+            showSuccess(getString(R.string.toast_import_done, friends.size()));
         } catch (Exception e) {
             LogHelp.e("XpWeChatCall", "import friends failed: " + e.getMessage(), e);
+            importFailed();
+        }
+    }
+
+    /**
+     * 导入失败：没有本地好友时展示可重试错误页，已有好友则保留列表只做轻提示。
+     */
+    private void importFailed() {
+        setImporting(false);
+        if (friends.isEmpty()) {
+            showError(getString(R.string.error_import_desc), this::importFromWeChat);
+        } else {
             toast(R.string.toast_import_none);
         }
     }

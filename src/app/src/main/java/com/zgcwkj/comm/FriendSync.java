@@ -165,7 +165,20 @@ public class FriendSync {
             if (!file.isFile() || file.length() == 0) {
                 return null;
             }
-            var src = android.graphics.BitmapFactory.decodeFile(file.getAbsolutePath());
+            // 列表头像只需要 144px：先按 2 的幂降采样，避免把整张原图读进内存
+            var bounds = new android.graphics.BitmapFactory.Options();
+            bounds.inJustDecodeBounds = true;
+            android.graphics.BitmapFactory.decodeFile(file.getAbsolutePath(), bounds);
+            var sample = 1;
+            if (size > 0 && bounds.outWidth > 0 && bounds.outHeight > 0) {
+                var edge = Math.min(bounds.outWidth, bounds.outHeight);
+                while (edge / (sample * 2) >= size * 2) {
+                    sample *= 2;
+                }
+            }
+            var options = new android.graphics.BitmapFactory.Options();
+            options.inSampleSize = sample;
+            var src = android.graphics.BitmapFactory.decodeFile(file.getAbsolutePath(), options);
             if (src == null) {
                 return null;
             }

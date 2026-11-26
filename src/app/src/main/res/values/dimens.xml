@@ -1,5 +1,23 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- 底部 Tab 栏高度（不含系统导航栏内边距） -->
-    <dimen name="tab_bar_height">56dp</dimen>
+    <!-- 8pt 间距体系；页面左右边距按屏宽在 values-sw390dp / values-sw430dp 递增 -->
+    <dimen name="space_1">8dp</dimen>
+    <dimen name="space_2">16dp</dimen>
+    <dimen name="space_3">24dp</dimen>
+    <dimen name="space_4">32dp</dimen>
+
+    <dimen name="page_margin_horizontal">16dp</dimen>
+    <dimen name="page_margin_top">8dp</dimen>
+    <dimen name="page_margin_bottom">8dp</dimen>
+
+    <dimen name="radius_control">14dp</dimen>
+    <dimen name="radius_card">16dp</dimen>
+    <dimen name="radius_small">12dp</dimen>
+
+    <dimen name="touch_min">48dp</dimen>
+    <dimen name="button_height">48dp</dimen>
+    <dimen name="input_height">48dp</dimen>
+    <dimen name="title_bar_height">72dp</dimen>
+    <dimen name="tab_bar_height">64dp</dimen>
+    <dimen name="row_height">76dp</dimen>
 </resources>

@@ -1,167 +1,247 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
 
-    <!-- 设置页卡片 -->
-    <style name="Card">
-        <item name="android:layout_width">match_parent</item>
-        <item name="android:layout_height">wrap_content</item>
-        <item name="android:layout_marginTop">10dp</item>
-        <item name="android:background">@drawable/bg_card</item>
-        <item name="android:elevation">1dp</item>
-        <item name="android:orientation">vertical</item>
-        <item name="android:padding">16dp</item>
+    <!-- ============ Typography ============ -->
+    <!-- Display 28/34, H1 22/28, H2 18/24, Section 13/18, Body 15/24,
+         BodySmall 13/20, Caption 12/18, Label 13/20 -->
+    <style name="Text">
+        <item name="android:includeFontPadding">false</item>
+        <item name="android:textColor">@color/text_primary</item>
     </style>
 
-    <!-- 分组标题 -->
-    <style name="SectionTitle">
-        <item name="android:layout_width">match_parent</item>
-        <item name="android:layout_height">wrap_content</item>
-        <item name="android:layout_marginTop">20dp</item>
-        <item name="android:layout_marginBottom">2dp</item>
-        <item name="android:paddingStart">4dp</item>
-        <item name="android:textColor">@color/text_primary</item>
-        <item name="android:textSize">14sp</item>
+    <style name="Text.Display" parent="Text">
+        <item name="android:fontFamily">sans-serif</item>
+        <item name="android:textSize">28sp</item>
+        <item name="android:lineHeight">34sp</item>
+        <item name="android:textStyle">bold</item>
+        <item name="android:letterSpacing">-0.015</item>
+    </style>
+
+    <style name="Text.H1" parent="Text">
+        <item name="android:fontFamily">sans-serif</item>
+        <item name="android:textSize">22sp</item>
+        <item name="android:lineHeight">28sp</item>
         <item name="android:textStyle">bold</item>
     </style>
 
-    <!-- 卡片内小标题 -->
+    <style name="Text.H2" parent="Text">
+        <item name="android:fontFamily">sans-serif-medium</item>
+        <item name="android:textSize">18sp</item>
+        <item name="android:lineHeight">24sp</item>
+    </style>
+
+    <style name="Text.Section" parent="Text">
+        <item name="android:fontFamily">sans-serif-medium</item>
+        <item name="android:textSize">13sp</item>
+        <item name="android:lineHeight">18sp</item>
+        <item name="android:letterSpacing">0.02</item>
+    </style>
+
+    <style name="Text.Body" parent="Text">
+        <item name="android:fontFamily">sans-serif</item>
+        <item name="android:textSize">15sp</item>
+        <item name="android:lineHeight">24sp</item>
+    </style>
+
+    <style name="Text.BodySmall" parent="Text">
+        <item name="android:fontFamily">sans-serif</item>
+        <item name="android:textSize">13sp</item>
+        <item name="android:lineHeight">20sp</item>
+    </style>
+
+    <style name="Text.Caption" parent="Text">
+        <item name="android:fontFamily">sans-serif</item>
+        <item name="android:textSize">12sp</item>
+        <item name="android:lineHeight">18sp</item>
+    </style>
+
+    <style name="Text.Label" parent="Text">
+        <item name="android:fontFamily">sans-serif-medium</item>
+        <item name="android:textSize">13sp</item>
+        <item name="android:lineHeight">20sp</item>
+    </style>
+
+    <!-- ============ Surfaces ============ -->
+    <style name="Card">
+        <item name="android:layout_width">match_parent</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:layout_marginTop">@dimen/space_2</item>
+        <item name="android:background">@drawable/bg_card</item>
+        <item name="android:orientation">vertical</item>
+        <item name="android:padding">@dimen/space_2</item>
+    </style>
+
+    <style name="SectionTitle">
+        <item name="android:layout_width">match_parent</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:layout_marginTop">@dimen/space_3</item>
+        <item name="android:layout_marginBottom">@dimen/space_1</item>
+        <item name="android:textColor">@color/text_primary</item>
+        <item name="android:textSize">14sp</item>
+        <item name="android:fontFamily">sans-serif-medium</item>
+    </style>
+
     <style name="CardTitle">
         <item name="android:layout_width">match_parent</item>
         <item name="android:layout_height">wrap_content</item>
         <item name="android:textColor">@color/text_primary</item>
-        <item name="android:textSize">15sp</item>
-        <item name="android:textStyle">bold</item>
+        <item name="android:textSize">17sp</item>
+        <item name="android:lineHeight">24sp</item>
+        <item name="android:fontFamily">sans-serif-medium</item>
     </style>
 
-    <!-- 说明文字 -->
     <style name="Hint">
         <item name="android:layout_width">match_parent</item>
         <item name="android:layout_height">wrap_content</item>
-        <item name="android:layout_marginTop">6dp</item>
-        <item name="android:lineSpacingExtra">2dp</item>
+        <item name="android:layout_marginTop">@dimen/space_1</item>
         <item name="android:textColor">@color/text_hint</item>
         <item name="android:textSize">12sp</item>
+        <item name="android:lineHeight">18sp</item>
     </style>
 
-    <!-- 开关下方的单行说明 -->
     <style name="RowSubtitle">
         <item name="android:layout_width">match_parent</item>
         <item name="android:layout_height">wrap_content</item>
-        <item name="android:layout_marginTop">2dp</item>
-        <item name="android:lineSpacingExtra">2dp</item>
+        <item name="android:layout_marginTop">4dp</item>
         <item name="android:textColor">@color/text_secondary</item>
-        <item name="android:textSize">12sp</item>
+        <item name="android:textSize">13sp</item>
+        <item name="android:lineHeight">20sp</item>
     </style>
 
-    <!-- 卡片最下方的小字补充 -->
     <style name="RowCaption">
         <item name="android:layout_width">match_parent</item>
         <item name="android:layout_height">wrap_content</item>
-        <item name="android:layout_marginTop">10dp</item>
-        <item name="android:lineSpacingExtra">1dp</item>
+        <item name="android:layout_marginTop">@dimen/space_2</item>
         <item name="android:textColor">@color/text_hint</item>
-        <item name="android:textSize">11sp</item>
+        <item name="android:textSize">12sp</item>
+        <item name="android:lineHeight">18sp</item>
     </style>
 
-    <!-- 输入框上方标签 -->
     <style name="InputLabel">
         <item name="android:layout_width">match_parent</item>
         <item name="android:layout_height">wrap_content</item>
-        <item name="android:layout_marginBottom">6dp</item>
+        <item name="android:layout_marginBottom">@dimen/space_1</item>
         <item name="android:textColor">@color/text_secondary</item>
         <item name="android:textSize">12sp</item>
+        <item name="android:fontFamily">sans-serif-medium</item>
     </style>
 
-    <!-- 运行状态、Token 等灰底信息块 -->
     <style name="ValueBox">
         <item name="android:layout_width">match_parent</item>
         <item name="android:layout_height">wrap_content</item>
-        <item name="android:layout_marginTop">12dp</item>
+        <item name="android:layout_marginTop">@dimen/space_2</item>
         <item name="android:background">@drawable/bg_card_flat</item>
         <item name="android:fontFamily">monospace</item>
-        <item name="android:lineSpacingExtra">3dp</item>
-        <item name="android:padding">12dp</item>
+        <item name="android:lineSpacingExtra">4dp</item>
+        <item name="android:padding">@dimen/space_2</item>
         <item name="android:textColor">@color/text_hint</item>
         <item name="android:textSize">12sp</item>
+        <item name="android:textIsSelectable">true</item>
     </style>
 
-    <!-- 卡片内分隔线 -->
     <style name="Divider">
         <item name="android:layout_width">match_parent</item>
         <item name="android:layout_height">1dp</item>
-        <item name="android:layout_marginTop">14dp</item>
-        <item name="android:layout_marginBottom">14dp</item>
+        <item name="android:layout_marginTop">@dimen/space_2</item>
+        <item name="android:layout_marginBottom">@dimen/space_2</item>
         <item name="android:background">@color/divider</item>
     </style>
 
-    <!-- 顶部分类标签 -->
     <style name="CategoryItem">
         <item name="android:layout_width">0dp</item>
-        <item name="android:layout_height">38dp</item>
+        <item name="android:layout_height">@dimen/touch_min</item>
         <item name="android:layout_weight">1</item>
-        <item name="android:layout_marginStart">3dp</item>
-        <item name="android:layout_marginEnd">3dp</item>
+        <item name="android:layout_marginStart">2dp</item>
+        <item name="android:layout_marginEnd">2dp</item>
         <item name="android:background">@drawable/bg_category_item</item>
         <item name="android:gravity">center</item>
+        <item name="android:fontFamily">sans-serif-medium</item>
         <item name="android:textColor">@color/category_item_text</item>
         <item name="android:textSize">13sp</item>
-        <item name="android:textStyle">bold</item>
+        <item name="android:clickable">true</item>
+        <item name="android:focusable">true</item>
     </style>
 
-    <!-- 输入框 -->
     <style name="Input">
         <item name="android:layout_width">match_parent</item>
-        <item name="android:layout_height">wrap_content</item>
+        <item name="android:layout_height">@dimen/input_height</item>
         <item name="android:background">@drawable/bg_input</item>
         <item name="android:maxLines">1</item>
-        <item name="android:paddingStart">14dp</item>
-        <item name="android:paddingEnd">14dp</item>
-        <item name="android:paddingTop">12dp</item>
-        <item name="android:paddingBottom">12dp</item>
+        <item name="android:paddingStart">@dimen/space_2</item>
+        <item name="android:paddingEnd">@dimen/space_2</item>
+        <item name="android:paddingTop">0dp</item>
+        <item name="android:paddingBottom">0dp</item>
         <item name="android:textColor">@color/text_primary</item>
         <item name="android:textColorHint">@color/text_hint</item>
-        <item name="android:textSize">14sp</item>
+        <item name="android:textSize">15sp</item>
+        <item name="android:gravity">center_vertical</item>
     </style>
 
-    <!-- 主按钮 -->
     <style name="ButtonPrimary">
         <item name="android:layout_width">0dp</item>
-        <item name="android:layout_height">46dp</item>
+        <item name="android:layout_height">@dimen/button_height</item>
         <item name="android:layout_weight">1</item>
         <item name="android:background">@drawable/bg_button_primary</item>
         <item name="android:gravity">center</item>
         <item name="android:minWidth">0dp</item>
-        <item name="android:paddingStart">12dp</item>
-        <item name="android:paddingEnd">12dp</item>
+        <item name="android:minHeight">@dimen/touch_min</item>
+        <item name="android:paddingStart">@dimen/space_2</item>
+        <item name="android:paddingEnd">@dimen/space_2</item>
         <item name="android:stateListAnimator">@null</item>
         <item name="android:textAllCaps">false</item>
-        <item name="android:textColor">@color/white</item>
+        <item name="android:textColor">@color/on_primary</item>
         <item name="android:textSize">14sp</item>
-        <item name="android:textStyle">bold</item>
+        <item name="android:fontFamily">sans-serif-medium</item>
     </style>
 
-    <!-- 次按钮 -->
     <style name="ButtonSecondary">
         <item name="android:layout_width">0dp</item>
-        <item name="android:layout_height">46dp</item>
+        <item name="android:layout_height">@dimen/button_height</item>
         <item name="android:layout_weight">1</item>
         <item name="android:background">@drawable/bg_button_secondary</item>
         <item name="android:gravity">center</item>
         <item name="android:minWidth">0dp</item>
-        <item name="android:paddingStart">12dp</item>
-        <item name="android:paddingEnd">12dp</item>
+        <item name="android:minHeight">@dimen/touch_min</item>
+        <item name="android:paddingStart">@dimen/space_2</item>
+        <item name="android:paddingEnd">@dimen/space_2</item>
         <item name="android:stateListAnimator">@null</item>
         <item name="android:textAllCaps">false</item>
         <item name="android:textColor">@color/text_primary</item>
         <item name="android:textSize">14sp</item>
+        <item name="android:fontFamily">sans-serif-medium</item>
     </style>
 
-    <!-- 开关行 -->
+    <style name="IconButton">
+        <item name="android:layout_width">@dimen/touch_min</item>
+        <item name="android:layout_height">@dimen/touch_min</item>
+        <item name="android:background">@drawable/bg_icon_button</item>
+        <item name="android:gravity">center</item>
+        <item name="android:clickable">true</item>
+        <item name="android:focusable">true</item>
+        <item name="android:padding">12dp</item>
+        <item name="android:scaleType">centerInside</item>
+    </style>
+
+    <style name="ButtonInlinePrimary" parent="ButtonPrimary">
+        <item name="android:layout_width">wrap_content</item>
+        <item name="android:layout_weight">0</item>
+        <item name="android:paddingStart">20dp</item>
+        <item name="android:paddingEnd">20dp</item>
+    </style>
+
+    <style name="ButtonInlineSecondary" parent="ButtonSecondary">
+        <item name="android:layout_width">wrap_content</item>
+        <item name="android:layout_weight">0</item>
+        <item name="android:paddingStart">20dp</item>
+        <item name="android:paddingEnd">20dp</item>
+    </style>
+
     <style name="SwitchRow">
         <item name="android:layout_width">match_parent</item>
         <item name="android:layout_height">wrap_content</item>
-        <item name="android:minHeight">44dp</item>
+        <item name="android:minHeight">@dimen/touch_min</item>
         <item name="android:textColor">@color/text_primary</item>
         <item name="android:textSize">15sp</item>
+        <item name="android:fontFamily">sans-serif-medium</item>
     </style>
 </resources>

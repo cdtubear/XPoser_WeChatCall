@@ -243,18 +243,18 @@ public class TriggerSettingsActivity extends Activity {
 
     private void applyNavState() {
         var primary = getResources().getColor(R.color.primary);
-        var disabled = getResources().getColor(R.color.text_disabled);
+        var secondary = getResources().getColor(R.color.text_secondary);
         var primaryList = ColorStateList.valueOf(primary);
-        var disabledList = ColorStateList.valueOf(disabled);
-        ((TextView) findViewById(R.id.tab_home_text)).setTextColor(disabled);
-        ((TextView) findViewById(R.id.tab_log_text)).setTextColor(disabled);
+        var secondaryList = ColorStateList.valueOf(secondary);
+        findViewById(R.id.tab_home).setSelected(false);
+        findViewById(R.id.tab_log).setSelected(false);
+        findViewById(R.id.tab_settings).setSelected(true);
+        ((TextView) findViewById(R.id.tab_home_text)).setTextColor(secondary);
+        ((TextView) findViewById(R.id.tab_log_text)).setTextColor(secondary);
         ((TextView) findViewById(R.id.tab_settings_text)).setTextColor(primary);
-        ((ImageView) findViewById(R.id.tab_home_icon)).setImageTintList(disabledList);
-        ((ImageView) findViewById(R.id.tab_log_icon)).setImageTintList(disabledList);
+        ((ImageView) findViewById(R.id.tab_home_icon)).setImageTintList(secondaryList);
+        ((ImageView) findViewById(R.id.tab_log_icon)).setImageTintList(secondaryList);
         ((ImageView) findViewById(R.id.tab_settings_icon)).setImageTintList(primaryList);
-        findViewById(R.id.tab_home_icon).setAlpha(0.5f);
-        findViewById(R.id.tab_log_icon).setAlpha(0.5f);
-        findViewById(R.id.tab_settings_icon).setAlpha(1f);
     }
 
     /**
@@ -265,20 +265,33 @@ public class TriggerSettingsActivity extends Activity {
         var spacer = findViewById(R.id.status_bar_spacer);
         var titleBar = findViewById(R.id.title_bar);
         var scroll = findViewById(R.id.scroll);
+        var categoryBar = findViewById(R.id.category_bar);
         var tabBar = findViewById(R.id.tab_bar);
         var tabHeight = getResources().getDimensionPixelSize(R.dimen.tab_bar_height);
         var titlePaddingStart = titleBar.getPaddingStart();
         var titlePaddingEnd = titleBar.getPaddingEnd();
+        var titlePaddingTop = titleBar.getPaddingTop();
+        var titlePaddingBottom = titleBar.getPaddingBottom();
+        var categoryPaddingStart = categoryBar.getPaddingStart();
+        var categoryPaddingEnd = categoryBar.getPaddingEnd();
+        var categoryPaddingTop = categoryBar.getPaddingTop();
+        var categoryPaddingBottom = categoryBar.getPaddingBottom();
+        var tabPaddingStart = tabBar.getPaddingStart();
+        var tabPaddingEnd = tabBar.getPaddingEnd();
+        var tabPaddingTop = tabBar.getPaddingTop();
         root.setOnApplyWindowInsetsListener((view, insets) -> {
             var bars = insets.getInsets(
                 WindowInsets.Type.systemBars() | WindowInsets.Type.displayCutout());
             var spacerParams = spacer.getLayoutParams();
             spacerParams.height = bars.top;
             spacer.setLayoutParams(spacerParams);
-            titleBar.setPaddingRelative(titlePaddingStart + bars.left, 0,
-                titlePaddingEnd + bars.right, 0);
+            titleBar.setPaddingRelative(titlePaddingStart + bars.left, titlePaddingTop,
+                titlePaddingEnd + bars.right, titlePaddingBottom);
+            categoryBar.setPaddingRelative(categoryPaddingStart + bars.left, categoryPaddingTop,
+                categoryPaddingEnd + bars.right, categoryPaddingBottom);
             scroll.setPadding(bars.left, 0, bars.right, 0);
-            tabBar.setPadding(bars.left, 0, bars.right, bars.bottom);
+            tabBar.setPadding(tabPaddingStart + bars.left, tabPaddingTop,
+                tabPaddingEnd + bars.right, bars.bottom + 6);
             var tabParams = tabBar.getLayoutParams();
             tabParams.height = tabHeight + bars.bottom;
             tabBar.setLayoutParams(tabParams);

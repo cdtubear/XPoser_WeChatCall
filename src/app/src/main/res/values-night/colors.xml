@@ -1,12 +1,35 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <color name="primary">#07C160</color>
-    <color name="background">#121212</color>
-    <color name="surface">#1E1E1E</color>
-    <color name="text_primary">#E6E6E6</color>
-    <color name="text_secondary">#AAAAAA</color>
-    <color name="text_disabled">#777777</color>
-    <color name="text_hint">#888888</color>
-    <color name="divider">#2A2A2A</color>
-    <color name="danger">#E64340</color>
+    <!-- 夜间模式：降低白点亮度，保持同一套语义 token -->
+    <color name="primary">#5DD39E</color>
+    <color name="primary_dark">#3FB27F</color>
+    <color name="primary_light">#173D2C</color>
+    <color name="primary_disabled">#315747</color>
+
+    <color name="background">#101311</color>
+    <color name="surface">#181C19</color>
+    <color name="surface_alt">#202521</color>
+    <color name="surface_pressed">#2A312C</color>
+    <color name="stroke">#2D352F</color>
+    <color name="stroke_strong">#3B463E</color>
+    <color name="divider">#262D28</color>
+
+    <color name="text_primary">#EEF2EF</color>
+    <color name="text_secondary">#B8C2BB</color>
+    <color name="text_hint">#98A49C</color>
+    <color name="text_disabled">#6E7A72</color>
+
+    <color name="danger">#FFB4AB</color>
+    <color name="danger_light">#3B1E1C</color>
+    <color name="warning">#F2C46D</color>
+    <color name="warning_light">#382B12</color>
+    <color name="info">#9ACBFF</color>
+    <color name="info_light">#17283A</color>
+
+    <color name="skeleton">#242A25</color>
+    <color name="skeleton_strong">#303832</color>
+
+    <color name="white">#FFFFFF</color>
+    <color name="black">#000000</color>
+    <color name="on_primary">#072117</color>
 </resources>

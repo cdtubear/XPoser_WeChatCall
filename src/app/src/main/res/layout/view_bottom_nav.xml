@@ -1,19 +1,25 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- 底部导航：首页 / 日志 / 设置 -->
+<!-- 底部导航：三项；选中项用浅色底 + 强调色文字，不靠阴影 -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:id="@+id/tab_bar"
     android:layout_width="match_parent"
     android:layout_height="@dimen/tab_bar_height"
     android:background="@drawable/bg_bottom_nav"
-    android:elevation="12dp"
-    android:orientation="horizontal">
+    android:baselineAligned="false"
+    android:orientation="horizontal"
+    android:paddingStart="@dimen/space_1"
+    android:paddingEnd="@dimen/space_1"
+    android:paddingTop="6dp"
+    android:paddingBottom="6dp">
 
     <LinearLayout
         android:id="@+id/tab_home"
         android:layout_width="0dp"
         android:layout_height="match_parent"
+        android:layout_marginStart="4dp"
+        android:layout_marginEnd="4dp"
         android:layout_weight="1"
-        android:background="?android:attr/selectableItemBackground"
+        android:background="@drawable/bg_nav_item"
         android:clickable="true"
         android:focusable="true"
         android:gravity="center"
@@ -21,29 +27,31 @@
 
         <ImageView
             android:id="@+id/tab_home_icon"
-            android:layout_width="24dp"
-            android:layout_height="24dp"
-            android:contentDescription="@string/tab_home"
+            android:layout_width="22dp"
+            android:layout_height="22dp"
+            android:importantForAccessibility="no"
             android:src="@drawable/ic_tab_home"
             android:tint="@color/primary" />
 
         <TextView
             android:id="@+id/tab_home_text"
+            style="@style/Text.Label"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_marginTop="2dp"
             android:text="@string/tab_home"
             android:textColor="@color/primary"
-            android:textSize="11sp"
-            android:textStyle="bold" />
+            android:textSize="12sp" />
     </LinearLayout>
 
     <LinearLayout
         android:id="@+id/tab_log"
         android:layout_width="0dp"
         android:layout_height="match_parent"
+        android:layout_marginStart="4dp"
+        android:layout_marginEnd="4dp"
         android:layout_weight="1"
-        android:background="?android:attr/selectableItemBackground"
+        android:background="@drawable/bg_nav_item"
         android:clickable="true"
         android:focusable="true"
         android:gravity="center"
@@ -51,28 +59,31 @@
 
         <ImageView
             android:id="@+id/tab_log_icon"
-            android:layout_width="24dp"
-            android:layout_height="24dp"
-            android:contentDescription="@string/tab_log"
+            android:layout_width="22dp"
+            android:layout_height="22dp"
+            android:importantForAccessibility="no"
             android:src="@drawable/ic_tab_log"
-            android:tint="@color/text_hint" />
+            android:tint="@color/text_secondary" />
 
         <TextView
             android:id="@+id/tab_log_text"
+            style="@style/Text.Label"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_marginTop="2dp"
             android:text="@string/tab_log"
-            android:textColor="@color/text_hint"
-            android:textSize="11sp" />
+            android:textColor="@color/text_secondary"
+            android:textSize="12sp" />
     </LinearLayout>
 
     <LinearLayout
         android:id="@+id/tab_settings"
         android:layout_width="0dp"
         android:layout_height="match_parent"
+        android:layout_marginStart="4dp"
+        android:layout_marginEnd="4dp"
         android:layout_weight="1"
-        android:background="?android:attr/selectableItemBackground"
+        android:background="@drawable/bg_nav_item"
         android:clickable="true"
         android:focusable="true"
         android:gravity="center"
@@ -80,19 +91,20 @@
 
         <ImageView
             android:id="@+id/tab_settings_icon"
-            android:layout_width="24dp"
-            android:layout_height="24dp"
-            android:contentDescription="@string/tab_settings"
+            android:layout_width="22dp"
+            android:layout_height="22dp"
+            android:importantForAccessibility="no"
             android:src="@drawable/ic_tab_settings"
-            android:tint="@color/text_hint" />
+            android:tint="@color/text_secondary" />
 
         <TextView
             android:id="@+id/tab_settings_text"
+            style="@style/Text.Label"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_marginTop="2dp"
             android:text="@string/tab_settings"
-            android:textColor="@color/text_hint"
-            android:textSize="11sp" />
+            android:textColor="@color/text_secondary"
+            android:textSize="12sp" />
     </LinearLayout>
 </LinearLayout>

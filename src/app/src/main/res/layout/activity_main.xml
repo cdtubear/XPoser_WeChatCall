@@ -6,328 +6,649 @@
     android:background="@color/background"
     android:orientation="vertical">
 
-    <!-- 状态栏占位 -->
+    <!-- 状态栏占位：浅色系统栏与标题栏同底 -->
     <View
         android:id="@+id/status_bar_spacer"
         android:layout_width="match_parent"
         android:layout_height="0dp"
-        android:background="@color/primary" />
+        android:background="@color/surface" />
 
-    <!-- 顶部标题栏 -->
+    <!-- 顶部标题栏：大标题 + 一句说明，操作放在右侧 -->
     <LinearLayout
         android:id="@+id/title_bar"
         android:layout_width="match_parent"
-        android:layout_height="56dp"
+        android:layout_height="wrap_content"
+        android:minHeight="@dimen/title_bar_height"
         android:background="@drawable/bg_title_bar"
         android:gravity="center_vertical"
         android:orientation="horizontal"
-        android:paddingStart="20dp"
-        android:paddingEnd="10dp">
+        android:paddingStart="@dimen/page_margin_horizontal"
+        android:paddingEnd="@dimen/space_1"
+        android:paddingTop="12dp"
+        android:paddingBottom="12dp">
 
-        <TextView
+        <LinearLayout
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_weight="1"
-            android:text="@string/app_name"
-            android:textColor="@android:color/white"
-            android:textSize="20sp"
-            android:textStyle="bold" />
+            android:orientation="vertical">
 
-        <!-- 首页操作：导入/添加，切到日志时隐藏 -->
-        <TextView
+            <TextView
+                android:id="@+id/page_title"
+                style="@style/Text.H1"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:ellipsize="end"
+                android:maxLines="1"
+                android:text="@string/home_title" />
+
+            <TextView
+                android:id="@+id/page_subtitle"
+                style="@style/Text.Caption"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="4dp"
+                android:ellipsize="end"
+                android:maxLines="1"
+                android:text="@string/home_subtitle"
+                android:textColor="@color/text_hint" />
+        </LinearLayout>
+
+        <!-- 首页操作：导入 / 添加，切到日志时隐藏 -->
+        <LinearLayout
             android:id="@+id/btn_import"
             android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:background="@drawable/bg_pill_title"
+            android:layout_height="@dimen/touch_min"
+            android:background="@drawable/bg_button_secondary"
             android:clickable="true"
             android:focusable="true"
-            android:paddingStart="12dp"
-            android:paddingEnd="12dp"
-            android:paddingTop="7dp"
-            android:paddingBottom="7dp"
-            android:text="@string/action_import"
-            android:textColor="@android:color/white"
-            android:textSize="13sp" />
+            android:gravity="center"
+            android:minWidth="@dimen/touch_min"
+            android:orientation="horizontal"
+            android:paddingStart="10dp"
+            android:paddingEnd="10dp"
+            android:contentDescription="@string/action_import">
 
-        <TextView
+            <ImageView
+                android:id="@+id/btn_import_icon"
+                android:layout_width="18dp"
+                android:layout_height="18dp"
+                android:importantForAccessibility="no"
+                android:src="@drawable/ic_import"
+                android:tint="@color/text_secondary" />
+
+            <TextView
+                android:id="@+id/btn_import_text"
+                style="@style/Text.Label"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="4dp"
+                android:text="@string/action_import_short"
+                android:textColor="@color/text_secondary" />
+        </LinearLayout>
+
+        <LinearLayout
             android:id="@+id/btn_add"
             android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginStart="8dp"
-            android:background="@drawable/bg_pill_title"
+            android:layout_height="@dimen/touch_min"
+            android:layout_marginStart="@dimen/space_1"
+            android:background="@drawable/bg_button_primary"
             android:clickable="true"
             android:focusable="true"
+            android:gravity="center"
+            android:minWidth="@dimen/touch_min"
+            android:orientation="horizontal"
             android:paddingStart="12dp"
             android:paddingEnd="12dp"
-            android:paddingTop="7dp"
-            android:paddingBottom="7dp"
-            android:text="@string/action_add"
-            android:textColor="@android:color/white"
-            android:textSize="13sp" />
+            android:contentDescription="@string/action_add">
 
-        <!-- 日志操作：刷新/清空，切到日志时显示 -->
-        <TextView
+            <ImageView
+                android:id="@+id/btn_add_icon"
+                android:layout_width="18dp"
+                android:layout_height="18dp"
+                android:importantForAccessibility="no"
+                android:src="@drawable/ic_add"
+                android:tint="@color/on_primary" />
+
+            <TextView
+                android:id="@+id/btn_add_text"
+                style="@style/Text.Label"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="4dp"
+                android:text="@string/action_add_short"
+                android:textColor="@color/on_primary" />
+        </LinearLayout>
+
+        <!-- 日志操作：刷新 / 清空，切到日志时显示 -->
+        <ImageView
             android:id="@+id/btn_log_refresh"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:background="@drawable/bg_pill_title"
-            android:clickable="true"
-            android:focusable="true"
-            android:paddingStart="12dp"
-            android:paddingEnd="12dp"
-            android:paddingTop="7dp"
-            android:paddingBottom="7dp"
-            android:text="@string/action_refresh"
-            android:textColor="@android:color/white"
-            android:textSize="13sp"
+            style="@style/IconButton"
+            android:contentDescription="@string/action_refresh"
+            android:src="@drawable/ic_refresh"
+            android:tint="@color/text_secondary"
             android:visibility="gone" />
 
-        <TextView
+        <ImageView
             android:id="@+id/btn_log_clear"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginStart="8dp"
-            android:background="@drawable/bg_pill_title"
-            android:clickable="true"
-            android:focusable="true"
-            android:paddingStart="12dp"
-            android:paddingEnd="12dp"
-            android:paddingTop="7dp"
-            android:paddingBottom="7dp"
-            android:text="@string/action_clear_log"
-            android:textColor="@android:color/white"
-            android:textSize="13sp"
+            style="@style/IconButton"
+            android:contentDescription="@string/action_clear_log"
+            android:src="@drawable/ic_delete"
+            android:tint="@color/text_secondary"
             android:visibility="gone" />
     </LinearLayout>
 
-    <!-- 内容区域：首页=好友列表，日志=运行日志 -->
+    <!-- 内容区域：首页 / 日志 -->
     <FrameLayout
         android:id="@+id/content"
         android:layout_width="match_parent"
         android:layout_height="0dp"
         android:layout_weight="1">
 
-        <!-- 首页 -->
         <LinearLayout
             android:id="@+id/page_home"
             android:layout_width="match_parent"
             android:layout_height="match_parent"
-            android:orientation="vertical">
+            android:orientation="vertical"
+            android:paddingStart="@dimen/page_margin_horizontal"
+            android:paddingEnd="@dimen/page_margin_horizontal"
+            android:paddingTop="@dimen/page_margin_top">
 
-            <!-- 搜索栏：按备注或 wxid 过滤好友 -->
-            <LinearLayout
+            <!-- 搜索：输入即过滤，右侧为 48dp 清除热区 -->
+            <FrameLayout
                 android:layout_width="match_parent"
-                android:layout_height="46dp"
-                android:layout_marginStart="16dp"
-                android:layout_marginEnd="16dp"
-                android:layout_marginTop="12dp"
-                android:background="@drawable/bg_search"
-                android:gravity="center_vertical"
-                android:orientation="horizontal"
-                android:paddingStart="14dp"
-                android:paddingEnd="6dp">
-
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="🔍"
-                    android:textSize="13sp" />
+                android:layout_height="@dimen/input_height"
+                android:layout_marginTop="@dimen/space_1">
 
                 <EditText
                     android:id="@+id/search_input"
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_marginStart="8dp"
-                    android:layout_weight="1"
-                    android:background="@null"
+                    style="@style/Text.Body"
+                    android:layout_width="match_parent"
+                    android:layout_height="match_parent"
+                    android:background="@drawable/bg_search"
+                    android:gravity="center_vertical"
                     android:hint="@string/search_hint"
                     android:imeOptions="actionSearch"
                     android:inputType="text"
                     android:maxLines="1"
-                    android:paddingTop="8dp"
-                    android:paddingBottom="8dp"
+                    android:paddingStart="44dp"
+                    android:paddingEnd="48dp"
+                    android:paddingTop="0dp"
+                    android:paddingBottom="0dp"
                     android:textColor="@color/text_primary"
                     android:textColorHint="@color/text_hint"
-                    android:textSize="14sp" />
+                    android:textSize="15sp" />
+
+                <ImageView
+                    android:layout_width="20dp"
+                    android:layout_height="20dp"
+                    android:layout_gravity="start|center_vertical"
+                    android:layout_marginStart="14dp"
+                    android:importantForAccessibility="no"
+                    android:src="@drawable/ic_search"
+                    android:tint="@color/text_hint" />
+
+                <ImageView
+                    android:id="@+id/search_clear"
+                    style="@style/IconButton"
+                    android:layout_gravity="end|center_vertical"
+                    android:layout_marginEnd="2dp"
+                    android:contentDescription="@string/action_clear_search"
+                    android:src="@drawable/ic_close"
+                    android:tint="@color/text_secondary"
+                    android:visibility="gone" />
+            </FrameLayout>
+
+            <!-- 分组标题：左侧标题，右侧数量 -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/space_3"
+                android:layout_marginBottom="@dimen/space_1"
+                android:gravity="center_vertical"
+                android:orientation="horizontal">
 
                 <TextView
-                    android:id="@+id/search_clear"
+                    style="@style/Text.Section"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="@string/home_section"
+                    android:textColor="@color/text_secondary" />
+
+                <TextView
+                    android:id="@+id/friend_count"
+                    style="@style/Text.Caption"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:background="?android:attr/selectableItemBackgroundBorderless"
-                    android:clickable="true"
-                    android:focusable="false"
-                    android:paddingStart="8dp"
-                    android:paddingEnd="8dp"
-                    android:paddingTop="6dp"
-                    android:paddingBottom="6dp"
-                    android:text="✕"
-                    android:textColor="@color/text_hint"
-                    android:textSize="14sp"
-                    android:visibility="gone" />
+                    android:textColor="@color/text_hint" />
             </LinearLayout>
 
-            <!-- 整页滚动：好友卡片与版权信息一起滚动 -->
-            <ScrollView
+            <!-- 列表 / 空 / 载入 / 错误，共用同一块内容热区 -->
+            <FrameLayout
                 android:layout_width="match_parent"
                 android:layout_height="0dp"
-                android:layout_weight="1"
-                android:fillViewport="true"
-                android:scrollbars="none">
+                android:layout_weight="1">
 
-                <LinearLayout
+                <FrameLayout
+                    android:id="@+id/list_surface"
                     android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:orientation="vertical">
+                    android:layout_height="match_parent"
+                    android:background="@drawable/bg_list_surface"
+                    android:clipToOutline="true">
 
-                    <!-- 好友行容器 -->
-                    <LinearLayout
-                        android:id="@+id/list_container"
+                    <ListView
+                        android:id="@+id/list_view"
+                        android:layout_width="match_parent"
+                        android:layout_height="match_parent"
+                        android:divider="@color/divider"
+                        android:dividerHeight="1dp"
+                        android:listSelector="@drawable/bg_list_item_selector"
+                        android:overScrollMode="never"
+                        android:paddingTop="4dp"
+                        android:paddingBottom="4dp"
+                        android:clipToPadding="false"
+                        android:scrollbars="none" />
+                </FrameLayout>
+
+                <!-- 骨架屏：仅导入/首次读取时出现，避免空白等待 -->
+                <LinearLayout
+                    android:id="@+id/loading_view"
+                    android:layout_width="match_parent"
+                    android:layout_height="match_parent"
+                    android:background="@drawable/bg_list_surface"
+                    android:orientation="vertical"
+                    android:paddingTop="4dp"
+                    android:paddingBottom="4dp"
+                    android:visibility="gone">
+
+                    <include layout="@layout/item_skeleton" />
+                    <include layout="@layout/item_skeleton" />
+                    <include layout="@layout/item_skeleton" />
+                    <include layout="@layout/item_skeleton" />
+                </LinearLayout>
+
+                <!-- 空状态：左对齐，不把整页内容居中 -->
+                <LinearLayout
+                    android:id="@+id/empty_view"
+                    android:layout_width="match_parent"
+                    android:layout_height="match_parent"
+                    android:orientation="vertical"
+                    android:paddingStart="4dp"
+                    android:paddingEnd="4dp"
+                    android:paddingTop="@dimen/space_4"
+                    android:visibility="gone">
+
+                    <FrameLayout
+                        android:layout_width="56dp"
+                        android:layout_height="56dp"
+                        android:background="@drawable/bg_icon_circle"
+                        android:importantForAccessibility="no">
+
+                        <ImageView
+                            android:layout_width="24dp"
+                            android:layout_height="24dp"
+                            android:layout_gravity="center"
+                            android:src="@drawable/ic_people"
+                            android:tint="@color/primary" />
+                    </FrameLayout>
+
+                    <TextView
+                        style="@style/Text.H2"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:orientation="vertical"
-                        android:paddingTop="4dp" />
+                        android:layout_marginTop="@dimen/space_2"
+                        android:text="@string/empty_title" />
 
-                    <!-- 还没有任何好友 -->
+                    <TextView
+                        style="@style/Text.BodySmall"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="@dimen/space_1"
+                        android:lineSpacingExtra="2dp"
+                        android:text="@string/empty_tip"
+                        android:textColor="@color/text_secondary" />
+
                     <LinearLayout
-                        android:id="@+id/empty_view"
                         android:layout_width="match_parent"
-                        android:layout_height="0dp"
-                        android:layout_weight="1"
-                        android:gravity="center"
-                        android:orientation="vertical"
-                        android:padding="24dp"
-                        android:visibility="gone">
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="@dimen/space_3"
+                        android:orientation="horizontal">
 
-                        <TextView
-                            android:layout_width="72dp"
-                            android:layout_height="72dp"
-                            android:background="@drawable/bg_icon_circle"
-                            android:gravity="center"
-                            android:text="💬"
-                            android:textSize="30sp" />
+                        <Button
+                            android:id="@+id/btn_empty_import"
+                            style="@style/ButtonInlinePrimary"
+                            android:text="@string/action_import" />
 
-                        <TextView
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:layout_marginTop="14dp"
-                            android:gravity="center"
-                            android:lineSpacingExtra="4dp"
-                            android:text="@string/empty_tip"
-                            android:textColor="@color/text_hint"
-                            android:textSize="14sp" />
+                        <Button
+                            android:id="@+id/btn_empty_add"
+                            style="@style/ButtonInlineSecondary"
+                            android:layout_marginStart="@dimen/space_1"
+                            android:text="@string/action_add_short" />
                     </LinearLayout>
-
-                    <!-- 有好友但没有匹配搜索结果 -->
-                    <LinearLayout
-                        android:id="@+id/search_empty_view"
-                        android:layout_width="match_parent"
-                        android:layout_height="0dp"
-                        android:layout_weight="1"
-                        android:gravity="center"
-                        android:orientation="vertical"
-                        android:padding="24dp"
-                        android:visibility="gone">
-
-                        <TextView
-                            android:layout_width="72dp"
-                            android:layout_height="72dp"
-                            android:background="@drawable/bg_icon_circle"
-                            android:gravity="center"
-                            android:text="🔍"
-                            android:textSize="30sp" />
-
-                        <TextView
-                            android:layout_width="wrap_content"
-                            android:layout_height="wrap_content"
-                            android:layout_marginTop="14dp"
-                            android:text="@string/search_empty"
-                            android:textColor="@color/text_hint"
-                            android:textSize="14sp" />
-                    </LinearLayout>
-
-                    <!-- 内容不足一屏时把版权信息推到底部 -->
-                    <View
-                        android:id="@+id/footer_spacer"
-                        android:layout_width="match_parent"
-                        android:layout_height="0dp"
-                        android:layout_weight="1" />
-
-                    <!-- 版权信息：点击跳转项目主页 -->
-                    <include layout="@layout/footer_powered" />
                 </LinearLayout>
-            </ScrollView>
+
+                <!-- 搜索结果为空 -->
+                <LinearLayout
+                    android:id="@+id/search_empty_view"
+                    android:layout_width="match_parent"
+                    android:layout_height="match_parent"
+                    android:orientation="vertical"
+                    android:paddingStart="4dp"
+                    android:paddingEnd="4dp"
+                    android:paddingTop="@dimen/space_4"
+                    android:visibility="gone">
+
+                    <FrameLayout
+                        android:layout_width="56dp"
+                        android:layout_height="56dp"
+                        android:background="@drawable/bg_icon_circle"
+                        android:importantForAccessibility="no">
+
+                        <ImageView
+                            android:layout_width="24dp"
+                            android:layout_height="24dp"
+                            android:layout_gravity="center"
+                            android:src="@drawable/ic_search"
+                            android:tint="@color/primary" />
+                    </FrameLayout>
+
+                    <TextView
+                        style="@style/Text.H2"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="@dimen/space_2"
+                        android:text="@string/search_empty_title" />
+
+                    <TextView
+                        style="@style/Text.BodySmall"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="@dimen/space_1"
+                        android:text="@string/search_empty"
+                        android:textColor="@color/text_secondary" />
+
+                    <Button
+                        android:id="@+id/btn_clear_search"
+                        style="@style/ButtonInlineSecondary"
+                        android:layout_marginTop="@dimen/space_3"
+                        android:text="@string/action_clear_search" />
+                </LinearLayout>
+
+                <!-- 错误：说明原因 + 可重试 -->
+                <LinearLayout
+                    android:id="@+id/error_view"
+                    android:layout_width="match_parent"
+                    android:layout_height="match_parent"
+                    android:orientation="vertical"
+                    android:paddingStart="4dp"
+                    android:paddingEnd="4dp"
+                    android:paddingTop="@dimen/space_4"
+                    android:visibility="gone">
+
+                    <FrameLayout
+                        android:layout_width="56dp"
+                        android:layout_height="56dp"
+                        android:background="@drawable/bg_icon_circle_danger"
+                        android:importantForAccessibility="no">
+
+                        <ImageView
+                            android:layout_width="24dp"
+                            android:layout_height="24dp"
+                            android:layout_gravity="center"
+                            android:src="@drawable/ic_alert"
+                            android:tint="@color/danger" />
+                    </FrameLayout>
+
+                    <TextView
+                        android:id="@+id/error_title"
+                        style="@style/Text.H2"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="@dimen/space_2"
+                        android:text="@string/error_import_title" />
+
+                    <TextView
+                        android:id="@+id/error_text"
+                        style="@style/Text.BodySmall"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="@dimen/space_1"
+                        android:text="@string/error_import_desc"
+                        android:textColor="@color/text_secondary" />
+
+                    <Button
+                        android:id="@+id/btn_retry"
+                        style="@style/ButtonInlinePrimary"
+                        android:layout_marginTop="@dimen/space_3"
+                        android:text="@string/action_retry" />
+                </LinearLayout>
+            </FrameLayout>
+
+            <TextView
+                android:id="@+id/tv_footer"
+                style="@style/Text.Caption"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:background="?android:attr/selectableItemBackground"
+                android:clickable="true"
+                android:focusable="true"
+                android:paddingTop="@dimen/space_1"
+                android:paddingBottom="@dimen/space_1"
+                android:text="@string/footer_text"
+                android:textColor="@color/text_hint" />
         </LinearLayout>
 
-        <!-- 日志 -->
+        <!-- 日志页 -->
         <LinearLayout
             android:id="@+id/page_log"
             android:layout_width="match_parent"
             android:layout_height="match_parent"
             android:orientation="vertical"
-            android:padding="16dp"
+            android:paddingStart="@dimen/page_margin_horizontal"
+            android:paddingEnd="@dimen/page_margin_horizontal"
+            android:paddingTop="@dimen/page_margin_top"
+            android:paddingBottom="@dimen/page_margin_bottom"
             android:visibility="gone">
+
+            <TextView
+                style="@style/Text.Section"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="@dimen/space_1"
+                android:layout_marginBottom="@dimen/space_1"
+                android:text="@string/log_title"
+                android:textColor="@color/text_secondary" />
 
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:background="@drawable/bg_card"
-                android:elevation="1dp"
                 android:gravity="center_vertical"
                 android:orientation="horizontal"
-                android:padding="14dp">
+                android:padding="@dimen/space_2">
 
-                <TextView
-                    android:id="@+id/log_path"
+                <LinearLayout
                     android:layout_width="0dp"
                     android:layout_height="wrap_content"
                     android:layout_weight="1"
-                    android:text="@string/log_path_hint"
-                    android:textColor="@color/text_hint"
-                    android:textSize="11sp" />
+                    android:orientation="vertical">
 
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:layout_marginStart="8dp"
-                    android:text="@string/log_switch"
-                    android:textColor="@color/text_secondary"
-                    android:textSize="12sp" />
+                    <TextView
+                        style="@style/Text.Label"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="@string/log_switch" />
+
+                    <TextView
+                        style="@style/Text.Caption"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="2dp"
+                        android:text="@string/log_switch_desc"
+                        android:textColor="@color/text_hint" />
+
+                    <TextView
+                        android:id="@+id/log_path"
+                        style="@style/Text.Caption"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="6dp"
+                        android:ellipsize="middle"
+                        android:fontFamily="monospace"
+                        android:maxLines="1"
+                        android:text="@string/log_path_hint"
+                        android:textColor="@color/text_hint" />
+                </LinearLayout>
 
                 <Switch
                     android:id="@+id/log_switch"
                     android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:layout_marginStart="4dp" />
+                    android:layout_height="@dimen/touch_min"
+                    android:layout_marginStart="@dimen/space_1"
+                    android:contentDescription="@string/log_switch" />
             </LinearLayout>
 
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="0dp"
-                android:layout_marginTop="10dp"
+                android:layout_marginTop="@dimen/space_2"
                 android:layout_weight="1"
                 android:background="@drawable/bg_card"
-                android:elevation="1dp"
-                android:orientation="vertical"
-                android:padding="12dp">
+                android:orientation="vertical">
 
-                <ScrollView
+                <LinearLayout
                     android:layout_width="match_parent"
-                    android:layout_height="match_parent">
+                    android:layout_height="wrap_content"
+                    android:gravity="center_vertical"
+                    android:orientation="horizontal"
+                    android:paddingStart="@dimen/space_2"
+                    android:paddingEnd="@dimen/space_2"
+                    android:paddingTop="12dp"
+                    android:paddingBottom="8dp">
+
+                    <View
+                        android:layout_width="6dp"
+                        android:layout_height="6dp"
+                        android:background="@drawable/bg_dot_primary" />
 
                     <TextView
-                        android:id="@+id/log_text"
-                        android:layout_width="match_parent"
+                        style="@style/Text.Caption"
+                        android:layout_width="0dp"
                         android:layout_height="wrap_content"
-                        android:textColor="@color/text_secondary"
-                        android:textSize="11sp"
-                        android:typeface="monospace" />
-                </ScrollView>
+                        android:layout_marginStart="@dimen/space_1"
+                        android:layout_weight="1"
+                        android:text="本次输出"
+                        android:textColor="@color/text_secondary" />
+                </LinearLayout>
+
+                <FrameLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="0dp"
+                    android:layout_weight="1">
+
+                    <ScrollView
+                        android:id="@+id/log_scroll"
+                        android:layout_width="match_parent"
+                        android:layout_height="match_parent"
+                        android:fillViewport="true"
+                        android:paddingStart="@dimen/space_2"
+                        android:paddingEnd="@dimen/space_2"
+                        android:paddingBottom="@dimen/space_2"
+                        android:scrollbars="none">
+
+                        <TextView
+                            android:id="@+id/log_text"
+                            style="@style/Text.Caption"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:fontFamily="monospace"
+                            android:lineSpacingExtra="4dp"
+                            android:textColor="@color/text_secondary"
+                            android:textIsSelectable="true" />
+                    </ScrollView>
+
+                    <LinearLayout
+                        android:id="@+id/log_empty_view"
+                        android:layout_width="match_parent"
+                        android:layout_height="match_parent"
+                        android:gravity="center"
+                        android:orientation="vertical"
+                        android:padding="@dimen/space_3"
+                        android:visibility="gone">
+
+                        <FrameLayout
+                            android:layout_width="56dp"
+                            android:layout_height="56dp"
+                            android:background="@drawable/bg_icon_circle"
+                            android:importantForAccessibility="no">
+
+                            <ImageView
+                                android:layout_width="24dp"
+                                android:layout_height="24dp"
+                                android:layout_gravity="center"
+                                android:src="@drawable/ic_tab_log"
+                                android:tint="@color/primary" />
+                        </FrameLayout>
+
+                        <TextView
+                            style="@style/Text.H2"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="@dimen/space_2"
+                            android:text="@string/log_empty_title" />
+
+                        <TextView
+                            style="@style/Text.BodySmall"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="@dimen/space_1"
+                            android:gravity="center"
+                            android:text="@string/log_empty_desc"
+                            android:textColor="@color/text_secondary" />
+                    </LinearLayout>
+                </FrameLayout>
             </LinearLayout>
+        </LinearLayout>
+
+        <!-- 成功反馈：覆盖在内容底部，首页/日志页都能看到 -->
+        <LinearLayout
+            android:id="@+id/success_banner"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_gravity="bottom"
+            android:layout_marginStart="@dimen/page_margin_horizontal"
+            android:layout_marginEnd="@dimen/page_margin_horizontal"
+            android:layout_marginBottom="@dimen/space_2"
+            android:accessibilityLiveRegion="polite"
+            android:background="@drawable/bg_banner_success"
+            android:gravity="center_vertical"
+            android:minHeight="@dimen/touch_min"
+            android:orientation="horizontal"
+            android:paddingStart="12dp"
+            android:paddingEnd="12dp"
+            android:paddingTop="8dp"
+            android:paddingBottom="8dp"
+            android:visibility="gone">
+
+            <ImageView
+                android:layout_width="20dp"
+                android:layout_height="20dp"
+                android:importantForAccessibility="no"
+                android:src="@drawable/ic_check"
+                android:tint="@color/primary" />
+
+            <TextView
+                android:id="@+id/success_text"
+                style="@style/Text.BodySmall"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="8dp"
+                android:layout_weight="1"
+                android:textColor="@color/primary_dark" />
         </LinearLayout>
     </FrameLayout>
 
-    <!-- 底部导航：首页 / 日志 / 设置 -->
     <include
         android:id="@+id/tab_bar"
         layout="@layout/view_bottom_nav"

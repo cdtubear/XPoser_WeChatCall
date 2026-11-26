@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 骨架屏单行：44 头像块 + 两条文本块 + 尾部块 -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="76dp"
+    android:gravity="center_vertical"
+    android:orientation="horizontal"
+    android:paddingStart="16dp"
+    android:paddingEnd="16dp">
+
+    <View
+        android:layout_width="44dp"
+        android:layout_height="44dp"
+        android:background="@drawable/bg_skeleton" />
+
+    <LinearLayout
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="12dp"
+        android:layout_weight="1"
+        android:orientation="vertical">
+
+        <View
+            android:layout_width="128dp"
+            android:layout_height="14dp"
+            android:background="@drawable/bg_skeleton" />
+
+        <View
+            android:layout_width="88dp"
+            android:layout_height="10dp"
+            android:layout_marginTop="8dp"
+            android:background="@drawable/bg_skeleton" />
+    </LinearLayout>
+
+    <View
+        android:layout_width="40dp"
+        android:layout_height="20dp"
+        android:background="@drawable/bg_skeleton" />
+</LinearLayout>

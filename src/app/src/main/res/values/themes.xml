@@ -1,10 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <!--
-        沉浸式主题
-        Theme.Material.Light 默认给状态栏设了不透明的 colorPrimaryDark，
-        即使窗口设为 edge-to-edge，系统仍会把那条不透明色盖在内容上方，
-        因此必须显式把系统栏颜色改为透明，并关掉系统的对比度遮罩
+        沉浸式、浅色系统栏。页面本身是中性浅底，状态栏图标改为深色，
+        不再用整条绿色标题栏抢走首屏注意力。
     -->
     <style name="AppTheme" parent="@android:style/Theme.Material.Light.NoActionBar">
         <item name="android:windowDrawsSystemBarBackgrounds">true</item>
@@ -12,13 +10,11 @@
         <item name="android:navigationBarColor">@android:color/transparent</item>
         <item name="android:enforceStatusBarContrast">false</item>
         <item name="android:enforceNavigationBarContrast">false</item>
-        <!-- 状态栏与标题栏同为微信绿，图标用浅色 -->
-        <item name="android:windowLightStatusBar">false</item>
-        <!-- 底部 Tab 栏为白色，导航栏图标用深色 -->
+        <item name="android:windowLightStatusBar">true</item>
         <item name="android:windowLightNavigationBar">true</item>
-        <!-- 统一控件强调色与窗口背景 -->
         <item name="android:colorAccent">@color/primary</item>
         <item name="android:colorControlActivated">@color/primary</item>
         <item name="android:windowBackground">@color/background</item>
+        <item name="android:windowNoTitle">true</item>
     </style>
 </resources>

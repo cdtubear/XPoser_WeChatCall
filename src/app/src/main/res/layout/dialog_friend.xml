@@ -30,41 +30,39 @@
                 android:layout_width="56dp"
                 android:layout_height="56dp"
                 android:background="@drawable/bg_avatar"
+                android:clipToOutline="true"
                 android:contentDescription="@string/friend_icon"
                 android:scaleType="centerCrop" />
 
             <TextView
                 android:id="@+id/btn_pick_icon"
+                style="@style/Text.Label"
                 android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
+                android:layout_height="@dimen/touch_min"
                 android:layout_marginStart="12dp"
-                android:background="@drawable/bg_pill_primary"
+                android:background="@drawable/bg_button_secondary"
                 android:clickable="true"
                 android:focusable="true"
+                android:gravity="center"
                 android:paddingStart="14dp"
                 android:paddingEnd="14dp"
-                android:paddingTop="7dp"
-                android:paddingBottom="7dp"
                 android:text="@string/action_pick_icon"
-                android:textColor="@color/primary"
-                android:textSize="12sp"
-                android:textStyle="bold" />
+                android:textColor="@color/text_primary" />
 
             <TextView
                 android:id="@+id/btn_reset_icon"
+                style="@style/Text.Label"
                 android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
+                android:layout_height="@dimen/touch_min"
                 android:layout_marginStart="8dp"
-                android:background="@drawable/bg_pill_neutral"
+                android:background="@drawable/bg_button_ghost"
                 android:clickable="true"
                 android:focusable="true"
-                android:paddingStart="14dp"
-                android:paddingEnd="14dp"
-                android:paddingTop="7dp"
-                android:paddingBottom="7dp"
+                android:gravity="center"
+                android:paddingStart="12dp"
+                android:paddingEnd="12dp"
                 android:text="@string/action_reset_icon"
-                android:textColor="@color/text_secondary"
-                android:textSize="12sp" />
+                android:textColor="@color/text_secondary" />
         </LinearLayout>
 
         <!-- 好友备注 -->

@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 分组列表容器：一整块白色圆角面板，行之间只用 1dp 分割线 -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="rectangle">
+    <solid android:color="@color/surface" />
+    <corners android:radius="@dimen/radius_card" />
+    <stroke
+        android:width="1dp"
+        android:color="@color/stroke" />
+</shape>

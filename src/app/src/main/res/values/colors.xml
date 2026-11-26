@@ -1,32 +1,42 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- 品牌色 -->
-    <color name="primary">#07C160</color>
-    <color name="primary_dark">#059B4C</color>
-    <color name="primary_light">#E8F8EF</color>
-    <color name="primary_disabled">#B7E7CC</color>
+    <!--
+        单一强调色：深微信绿。深色用于文字/按钮，浅色只用于容器，
+        保证白底上的正文与强调文字都满足 WCAG AA。
+    -->
+    <color name="primary">#0B7A45</color>
+    <color name="primary_dark">#065E35</color>
+    <color name="primary_light">#E8F4ED</color>
+    <color name="primary_disabled">#B8D8C6</color>
 
-    <!-- 背景与卡片 -->
-    <color name="background">#F2F4F5</color>
+    <!-- 中性色：低饱和暖灰，避免后台模板常见的冷白+蓝灰 -->
+    <color name="background">#F6F7F5</color>
     <color name="surface">#FFFFFF</color>
-    <color name="surface_alt">#F7F9FA</color>
-    <color name="stroke">#E3E7EA</color>
-    <color name="divider">#E6E9EC</color>
+    <color name="surface_alt">#EEF1ED</color>
+    <color name="surface_pressed">#E7ECE6</color>
+    <color name="stroke">#DEE4DD</color>
+    <color name="stroke_strong">#CDD5CC</color>
+    <color name="divider">#E9EDE8</color>
 
-    <!-- 文字 -->
-    <color name="text_primary">#1A1D1F</color>
-    <color name="text_secondary">#5C6670</color>
-    <color name="text_disabled">#9AA3AB</color>
-    <color name="text_hint">#8A9299</color>
+    <!-- 文字三级层级；caption 也保持 4.5:1 以上 -->
+    <color name="text_primary">#141A17</color>
+    <color name="text_secondary">#4F5B55</color>
+    <color name="text_hint">#66726C</color>
+    <color name="text_disabled">#9AA49E</color>
 
-    <!-- 状态色 -->
-    <color name="danger">#E5484D</color>
-    <color name="danger_light">#FDECEC</color>
-    <color name="warning">#F5A623</color>
-    <color name="warning_light">#FFF5E6</color>
-    <color name="info">#3B82F6</color>
-    <color name="info_light">#EAF2FE</color>
+    <!-- 语义状态色，不参与品牌表达 -->
+    <color name="danger">#B42318</color>
+    <color name="danger_light">#FDECEA</color>
+    <color name="warning">#8A5A00</color>
+    <color name="warning_light">#FFF4DC</color>
+    <color name="info">#225EA8</color>
+    <color name="info_light">#EAF2FB</color>
+
+    <!-- 骨架屏 -->
+    <color name="skeleton">#E6EBE5</color>
+    <color name="skeleton_strong">#D9E0D8</color>
 
     <color name="white">#FFFFFF</color>
     <color name="black">#000000</color>
+    <color name="on_primary">#FFFFFF</color>
 </resources>
