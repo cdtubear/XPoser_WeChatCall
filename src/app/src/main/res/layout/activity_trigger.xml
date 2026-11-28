@@ -25,6 +25,15 @@
         android:paddingTop="12dp"
         android:paddingBottom="12dp">
 
+        <ImageView
+            android:id="@+id/btn_back"
+            style="@style/IconButton"
+            android:layout_marginEnd="4dp"
+            android:contentDescription="返回设置总览"
+            android:src="@drawable/ic_back"
+            android:tint="@color/text_primary"
+            android:visibility="gone" />
+
         <LinearLayout
             android:layout_width="0dp"
             android:layout_height="wrap_content"
@@ -32,17 +41,21 @@
             android:orientation="vertical">
 
             <TextView
+                android:id="@+id/page_title"
                 style="@style/Text.H1"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:text="@string/tab_settings" />
 
             <TextView
+                android:id="@+id/page_subtitle"
                 style="@style/Text.Caption"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="4dp"
-                android:text="服务、连接与诊断"
+                android:ellipsize="end"
+                android:maxLines="1"
+                android:text="状态、设备与连接"
                 android:textColor="@color/text_hint" />
         </LinearLayout>
 
@@ -54,53 +67,11 @@
             android:background="@drawable/bg_status_chip"
             android:gravity="center"
             android:minHeight="32dp"
+            android:maxLines="1"
             android:paddingStart="12dp"
             android:paddingEnd="12dp"
             android:text="已停止"
             android:textColor="@color/text_secondary" />
-    </LinearLayout>
-
-    <LinearLayout
-        android:id="@+id/category_bar"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:background="@color/background"
-        android:baselineAligned="false"
-        android:orientation="horizontal"
-        android:paddingStart="10dp"
-        android:paddingEnd="10dp"
-        android:paddingTop="8dp"
-        android:paddingBottom="8dp">
-
-        <TextView
-            android:id="@+id/cat_service"
-            style="@style/CategoryItem"
-            android:text="服务" />
-
-        <TextView
-            android:id="@+id/cat_connection"
-            style="@style/CategoryItem"
-            android:text="连接" />
-
-        <TextView
-            android:id="@+id/cat_voip"
-            style="@style/CategoryItem"
-            android:text="来电" />
-
-        <TextView
-            android:id="@+id/cat_trigger"
-            style="@style/CategoryItem"
-            android:text="触发" />
-
-        <TextView
-            android:id="@+id/cat_diagnostic"
-            style="@style/CategoryItem"
-            android:text="诊断" />
-
-        <TextView
-            android:id="@+id/cat_about"
-            style="@style/CategoryItem"
-            android:text="关于" />
     </LinearLayout>
 
     <ScrollView
@@ -121,26 +92,278 @@
             android:paddingTop="@dimen/space_1"
             android:paddingBottom="@dimen/space_2">
 
-            <!-- 服务 -->
+            <!-- 设置总览 -->
             <LinearLayout
-                android:id="@+id/page_service"
+                android:id="@+id/page_overview"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:orientation="vertical">
 
                 <LinearLayout style="@style/Card">
 
-                    <Switch
-                        android:id="@+id/sw_enable"
-                        style="@style/SwitchRow"
-                        android:text="启用外部触发服务"
-                        android:textSize="16sp"
+                    <TextView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="运行状态"
+                        android:textColor="@color/text_primary"
+                        android:textSize="13sp"
                         android:textStyle="bold" />
 
                     <TextView
-                        style="@style/RowSubtitle"
-                        android:text="Webhook / HTTP 入口，开启后常驻前台通知" />
+                        android:id="@+id/tv_overview_state"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="6dp"
+                        android:text="服务已停止"
+                        android:textColor="@color/text_primary"
+                        android:textSize="18sp"
+                        android:textStyle="bold" />
+
+                    <TextView
+                        android:id="@+id/tv_overview_service"
+                        style="@style/Text.BodySmall"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="4dp"
+                        android:text="HTTP 未启动 · BLE 未启用"
+                        android:textColor="@color/text_secondary" />
+
+                    <View style="@style/Divider" />
+
+                    <TextView
+                        android:id="@+id/tv_overview_device"
+                        style="@style/Text.BodySmall"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="设备信息读取中…"
+                        android:textColor="@color/text_secondary" />
+
+                    <TextView
+                        android:id="@+id/tv_overview_root"
+                        style="@style/Text.Caption"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="4dp"
+                        android:text="Root 检测中…"
+                        android:textColor="@color/text_hint" />
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="12dp"
+                        android:orientation="horizontal">
+
+                        <Button
+                            android:id="@+id/btn_service_toggle"
+                            style="@style/ButtonInlinePrimary"
+                            android:text="启动服务" />
+
+                        <Button
+                            android:id="@+id/btn_test"
+                            style="@style/ButtonInlineSecondary"
+                            android:layout_marginStart="8dp"
+                            android:text="测试连接" />
+                    </LinearLayout>
+
+                    <TextView
+                        android:id="@+id/tv_test_result"
+                        style="@style/Text.Caption"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="8dp"
+                        android:textColor="@color/text_secondary"
+                        android:visibility="gone" />
                 </LinearLayout>
+
+                <TextView
+                    style="@style/SectionTitle"
+                    android:text="设置" />
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:background="@drawable/bg_card"
+                    android:clipToOutline="true"
+                    android:orientation="vertical"
+                    android:paddingTop="4dp"
+                    android:paddingBottom="4dp">
+
+                    <LinearLayout
+                        android:id="@+id/row_connection"
+                        style="@style/SettingsRow">
+
+                        <LinearLayout
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:orientation="vertical">
+
+                            <TextView
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:text="连接与触发"
+                                android:textColor="@color/text_primary"
+                                android:textSize="16sp"
+                                android:textStyle="bold" />
+
+                            <TextView
+                                style="@style/Text.Caption"
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:layout_marginTop="2dp"
+                                android:text="HTTP、Token、蓝牙、回调与限流"
+                                android:textColor="@color/text_hint" />
+                        </LinearLayout>
+
+                        <ImageView
+                            android:layout_width="20dp"
+                            android:layout_height="20dp"
+                            android:layout_marginStart="8dp"
+                            android:importantForAccessibility="no"
+                            android:src="@drawable/ic_chevron"
+                            android:tint="@color/text_hint" />
+                    </LinearLayout>
+
+                    <View
+                        android:layout_width="match_parent"
+                        android:layout_height="1dp"
+                        android:layout_marginStart="16dp"
+                        android:background="@color/divider" />
+
+                    <LinearLayout
+                        android:id="@+id/row_voip"
+                        style="@style/SettingsRow">
+
+                        <LinearLayout
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:orientation="vertical">
+
+                            <TextView
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:text="来电与播报"
+                                android:textColor="@color/text_primary"
+                                android:textSize="16sp"
+                                android:textStyle="bold" />
+
+                            <TextView
+                                style="@style/Text.Caption"
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:layout_marginTop="2dp"
+                                android:text="联系人播报、声音与试听"
+                                android:textColor="@color/text_hint" />
+                        </LinearLayout>
+
+                        <ImageView
+                            android:layout_width="20dp"
+                            android:layout_height="20dp"
+                            android:layout_marginStart="8dp"
+                            android:importantForAccessibility="no"
+                            android:src="@drawable/ic_chevron"
+                            android:tint="@color/text_hint" />
+                    </LinearLayout>
+
+                    <View
+                        android:layout_width="match_parent"
+                        android:layout_height="1dp"
+                        android:layout_marginStart="16dp"
+                        android:background="@color/divider" />
+
+                    <LinearLayout
+                        android:id="@+id/row_device"
+                        style="@style/SettingsRow">
+
+                        <LinearLayout
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:orientation="vertical">
+
+                            <TextView
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:text="设备与诊断"
+                                android:textColor="@color/text_primary"
+                                android:textSize="16sp"
+                                android:textStyle="bold" />
+
+                            <TextView
+                                style="@style/Text.Caption"
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:layout_marginTop="2dp"
+                                android:text="Root、保活权限与原始诊断"
+                                android:textColor="@color/text_hint" />
+                        </LinearLayout>
+
+                        <ImageView
+                            android:layout_width="20dp"
+                            android:layout_height="20dp"
+                            android:layout_marginStart="8dp"
+                            android:importantForAccessibility="no"
+                            android:src="@drawable/ic_chevron"
+                            android:tint="@color/text_hint" />
+                    </LinearLayout>
+
+                    <View
+                        android:layout_width="match_parent"
+                        android:layout_height="1dp"
+                        android:layout_marginStart="16dp"
+                        android:background="@color/divider" />
+
+                    <LinearLayout
+                        android:id="@+id/row_about"
+                        style="@style/SettingsRow">
+
+                        <LinearLayout
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:orientation="vertical">
+
+                            <TextView
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:text="关于与更新"
+                                android:textColor="@color/text_primary"
+                                android:textSize="16sp"
+                                android:textStyle="bold" />
+
+                            <TextView
+                                style="@style/Text.Caption"
+                                android:layout_width="match_parent"
+                                android:layout_height="wrap_content"
+                                android:layout_marginTop="2dp"
+                                android:text="版本、更新与项目主页"
+                                android:textColor="@color/text_hint" />
+                        </LinearLayout>
+
+                        <ImageView
+                            android:layout_width="20dp"
+                            android:layout_height="20dp"
+                            android:layout_marginStart="8dp"
+                            android:importantForAccessibility="no"
+                            android:src="@drawable/ic_chevron"
+                            android:tint="@color/text_hint" />
+                    </LinearLayout>
+                </LinearLayout>
+            </LinearLayout>
+
+            <!-- 服务 -->
+            <LinearLayout
+                android:id="@+id/page_service"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:visibility="gone">
+
+                <TextView
+                    style="@style/SectionTitle"
+                    android:layout_marginTop="8dp"
+                    android:text="保活与权限" />
 
                 <LinearLayout style="@style/Card">
 
@@ -177,6 +400,23 @@
                             android:text="自启动设置" />
                     </LinearLayout>
 
+                    <Button
+                        android:id="@+id/btn_root"
+                        style="@style/ButtonSecondary"
+                        android:layout_width="match_parent"
+                        android:layout_marginTop="10dp"
+                        android:layout_weight="0"
+                        android:text="Root 检测" />
+
+                    <TextView
+                        android:id="@+id/tv_root_result"
+                        style="@style/Text.Caption"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="8dp"
+                        android:textColor="@color/text_secondary"
+                        android:visibility="gone" />
+
                     <TextView
                         style="@style/RowCaption"
                         android:text="MIUI / HyperOS 建议将省电策略设为「无限制」" />
@@ -190,6 +430,11 @@
                 android:layout_height="wrap_content"
                 android:orientation="vertical"
                 android:visibility="gone">
+
+                <TextView
+                    style="@style/SectionTitle"
+                    android:layout_marginTop="8dp"
+                    android:text="HTTP 与蓝牙" />
 
                 <LinearLayout style="@style/Card">
 
@@ -403,6 +648,11 @@
                 android:orientation="vertical"
                 android:visibility="gone">
 
+                <TextView
+                    style="@style/SectionTitle"
+                    android:layout_marginTop="8dp"
+                    android:text="播报与声音" />
+
                 <LinearLayout style="@style/Card">
 
                     <Switch
@@ -453,6 +703,10 @@
                 android:layout_height="wrap_content"
                 android:orientation="vertical"
                 android:visibility="gone">
+
+                <TextView
+                    style="@style/SectionTitle"
+                    android:text="触发与回调" />
 
                 <LinearLayout style="@style/Card">
 
@@ -567,26 +821,21 @@
                 android:orientation="vertical"
                 android:visibility="gone">
 
+                <TextView
+                    style="@style/SectionTitle"
+                    android:layout_marginTop="8dp"
+                    android:text="运行诊断" />
+
                 <LinearLayout style="@style/Card">
 
                     <TextView
+                        android:id="@+id/tv_diag_summary"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:text="运行状态"
-                        android:textColor="@color/text_primary"
-                        android:textSize="15sp"
-                        android:textStyle="bold" />
-
-                    <TextView
-                        android:id="@+id/tv_diag"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:layout_marginTop="10dp"
-                        android:fontFamily="monospace"
                         android:lineSpacingExtra="3dp"
                         android:text="正在读取…"
                         android:textColor="@color/text_secondary"
-                        android:textSize="12sp" />
+                        android:textSize="13sp" />
 
                     <LinearLayout
                         android:layout_width="match_parent"
@@ -602,8 +851,35 @@
                         <Button
                             android:id="@+id/btn_diag_copy"
                             style="@style/ButtonSecondary"
-                            android:text="复制" />
+                            android:layout_marginStart="10dp"
+                            android:text="复制诊断" />
                     </LinearLayout>
+
+                    <TextView
+                        android:id="@+id/btn_diag_expand"
+                        style="@style/Text.Label"
+                        android:layout_width="match_parent"
+                        android:layout_height="48dp"
+                        android:layout_marginTop="8dp"
+                        android:background="@drawable/bg_list_item_selector"
+                        android:clickable="true"
+                        android:contentDescription="展开原始诊断"
+                        android:focusable="true"
+                        android:gravity="center_vertical"
+                        android:text="原始诊断（展开）"
+                        android:textColor="@color/primary" />
+
+                    <TextView
+                        android:id="@+id/tv_diag"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="8dp"
+                        android:fontFamily="monospace"
+                        android:lineSpacingExtra="3dp"
+                        android:text="正在读取…"
+                        android:textColor="@color/text_secondary"
+                        android:textSize="12sp"
+                        android:visibility="gone" />
                 </LinearLayout>
             </LinearLayout>
 
@@ -614,6 +890,11 @@
                 android:layout_height="wrap_content"
                 android:orientation="vertical"
                 android:visibility="gone">
+
+                <TextView
+                    style="@style/SectionTitle"
+                    android:layout_marginTop="8dp"
+                    android:text="应用信息" />
 
                 <LinearLayout style="@style/Card">
 
@@ -740,40 +1021,35 @@
     </ScrollView>
 
     <LinearLayout
+        android:id="@+id/bottom_action"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:background="@drawable/bg_bottom_action"
+        android:gravity="center_vertical"
         android:orientation="horizontal"
         android:paddingStart="@dimen/page_margin_horizontal"
         android:paddingEnd="@dimen/page_margin_horizontal"
         android:paddingTop="12dp"
-        android:paddingBottom="12dp">
+        android:paddingBottom="12dp"
+        android:visibility="gone">
+
+        <TextView
+            android:id="@+id/tv_unsaved"
+            style="@style/Text.Caption"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginEnd="12dp"
+            android:text="有未保存改动"
+            android:textColor="@color/text_hint"
+            android:visibility="gone" />
 
         <Button
             android:id="@+id/btn_save"
             style="@style/ButtonPrimary"
             android:layout_width="0dp"
             android:layout_height="@dimen/button_height"
-            android:layout_weight="1.6"
-            android:text="保存并重启" />
-
-        <Button
-            android:id="@+id/btn_test"
-            style="@style/ButtonSecondary"
-            android:layout_width="0dp"
-            android:layout_height="@dimen/button_height"
-            android:layout_marginStart="8dp"
             android:layout_weight="1"
-            android:text="测试" />
-
-        <Button
-            android:id="@+id/btn_root"
-            style="@style/ButtonSecondary"
-            android:layout_width="0dp"
-            android:layout_height="@dimen/button_height"
-            android:layout_marginStart="8dp"
-            android:layout_weight="1"
-            android:text="Root 检测" />
+            android:text="已保存" />
     </LinearLayout>
 
     <include

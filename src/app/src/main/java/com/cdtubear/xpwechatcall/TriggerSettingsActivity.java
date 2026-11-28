@@ -1,6 +1,7 @@
 package com.cdtubear.xpwechatcall;
 
 import android.Manifest;
+import android.annotation.SuppressLint;
 import android.app.Activity;
 import android.app.AlertDialog;
 import android.content.ClipData;
@@ -13,6 +14,8 @@ import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
+import android.text.Editable;
+import android.text.TextWatcher;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.WindowInsets;
@@ -24,6 +27,7 @@ import android.widget.ProgressBar;
 import android.widget.Switch;
 import android.widget.TextView;
 import android.widget.Toast;
+import android.window.OnBackInvokedDispatcher;
 
 import com.zgcwkj.comm.ConfigHelp;
 import com.zgcwkj.comm.LogHelp;
@@ -67,7 +71,6 @@ public class TriggerSettingsActivity extends Activity {
     /** 已连接设备列表刷新间隔 */
     private static final long DEVICE_POLL_MS = 2000;
 
-    private Switch swEnable;
     private Switch swUnlock;
     private Switch swWatchdog;
     private Switch swBt;
@@ -79,6 +82,14 @@ public class TriggerSettingsActivity extends Activity {
     private TextView tvHint;
     private TextView tvKeepAlive;
     private TextView tvBtStatus;
+    private TextView tvOverviewState;
+    private TextView tvOverviewService;
+    private TextView tvOverviewDevice;
+    private TextView tvOverviewRoot;
+    private TextView tvTestResult;
+    private TextView tvRootResult;
+    private TextView tvDiagSummary;
+    private TextView tvUnsaved;
     private EditText etBind;
     private EditText etPort;
     private EditText etRate;
@@ -87,17 +98,34 @@ public class TriggerSettingsActivity extends Activity {
     private EditText etPackages;
     private EditText etAllowedIps;
     private LinearLayout llBtDevices;
+    private LinearLayout bottomAction;
     private TextView tvBtDevicesEmpty;
     private TextView tvUpdateVersion;
     private TextView tvDiag;
-    private int currentCategory;
+    private TextView btnDiagExpand;
+    private TextView pageTitle;
+    private TextView pageSubtitle;
+    private Button btnServiceToggle;
+    private Button btnTest;
+    private Button btnRoot;
+    private Button btnSave;
+    private ImageView btnBack;
+    private int currentPage;
     private TextView tvUpdateStatus;
     private ProgressBar pbUpdate;
     private Button btnUpdate;
 
-    /** 程序化更新 Switch 时避免触发保存逻辑 */
+    /** 程序化更新控件时避免触发脏状态与保存逻辑 */
     private boolean syncingUi;
     private boolean keepAliveBusy;
+    private boolean serviceBusy;
+    private boolean testBusy;
+    private boolean diagExpanded;
+    /** Root / 保活状态缓存，避免总览多次执行 su */
+    private boolean rootChecked;
+    private boolean rootAvailable;
+    private boolean batteryWhitelisted;
+    private String watchdogState = "检测中";
     /** 页面是否处于前台，后台回调不弹窗 */
     private boolean resumed;
 
@@ -109,7 +137,6 @@ public class TriggerSettingsActivity extends Activity {
             updateStatus();
             updateBtStatus();
             renderBtDevices();
-            renderDiagnostics();
             deviceHandler.postDelayed(this, DEVICE_POLL_MS);
         }
     };
@@ -123,22 +150,105 @@ public class TriggerSettingsActivity extends Activity {
         bindViews();
         applyInsets();
         bindBottomNav();
-        bindCategories();
+        bindNavigation();
         loadSettings();
         bindActions();
+        registerBackHandler();
+    }
+
+    /**
+     * Android 13+ 使用系统返回手势回调；旧版本保留兼容路径。
+     */
+    private void registerBackHandler() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            getOnBackInvokedDispatcher().registerOnBackInvokedCallback(
+                OnBackInvokedDispatcher.PRIORITY_DEFAULT, this::performBack);
+        }
+    }
+
+    private void performBack() {
+        if (currentPage != SettingsSections.OVERVIEW) {
+            leaveTo(SettingsSections.OVERVIEW);
+            return;
+        }
+        finish();
+    }
+
+    /**
+     * 详情页返回或切换底部 Tab 前，处理配置页的未保存改动。
+     */
+    private void leaveTo(int page) {
+        if (currentPage == page) {
+            return;
+        }
+        runAfterUnsavedCheck(() -> selectPage(page));
+    }
+
+    private void runAfterUnsavedCheck(Runnable action) {
+        if (!SettingsSections.isConfigPage(currentPage) || !hasUnsavedChanges()) {
+            action.run();
+            return;
+        }
+        new AlertDialog.Builder(this)
+            .setTitle("有未保存的改动")
+            .setMessage("当前配置尚未保存。保存后会立即应用，也可以放弃本次改动。")
+            .setPositiveButton("保存并应用", (dialog, which) -> {
+                saveAndApply();
+                if (!hasUnsavedChanges()) {
+                    action.run();
+                }
+            })
+            .setNegativeButton("放弃改动", (dialog, which) -> {
+                discardConfigChanges();
+                action.run();
+            })
+            .setNeutralButton("继续编辑", null)
+            .show();
+    }
+
+    /**
+     * 放弃暂存后把表单恢复到已持久化的配置，避免下次进入仍看到旧改动。
+     */
+    private void discardConfigChanges() {
+        syncingUi = true;
+        swUnlock.setChecked(TriggerContract.autoUnlock(this));
+        swBt.setChecked(TriggerContract.isBtEnabled(this));
+        swVoipAnnounce.setChecked(TriggerContract.voipAnnounce(this));
+        swVoipSound.setChecked(TriggerContract.voipSound(this));
+        etBind.setText(TriggerContract.bind(this));
+        etPort.setText(String.valueOf(TriggerContract.port(this)));
+        etRate.setText(String.valueOf(TriggerContract.rateLimit(this)));
+        etTimeout.setText(String.valueOf(TriggerContract.timeoutSec(this)));
+        etCallback.setText(TriggerContract.callbackHosts(this));
+        etPackages.setText(TriggerContract.allowedPackages(this));
+        etAllowedIps.setText(TriggerContract.allowedIps(this));
+        syncingUi = false;
+        updateDirtyState();
+        renderVoipStatus();
+    }
+
+    @SuppressLint("GestureBackNavigation")
+    @Override
+    public void onBackPressed() {
+        performBack();
     }
 
     @Override
     protected void onResume() {
         super.onResume();
         resumed = true;
-        // 通知栏「停止」会直接关闭开关，回到页面时同步一次
-        syncingUi = true;
-        swEnable.setChecked(TriggerContract.isEnabled(this));
-        swBt.setChecked(TriggerContract.isBtEnabled(this));
-        swVoipAnnounce.setChecked(TriggerContract.voipAnnounce(this));
-        swVoipSound.setChecked(TriggerContract.voipSound(this));
-        syncingUi = false;
+        // 通知栏「停止」会直接关闭开关，回到页面时同步一次；
+        // 配置页有暂存改动时保留表单，避免系统设置往返丢失输入。
+        var preserveDraft = SettingsSections.isConfigPage(currentPage)
+            && hasUnsavedChanges();
+        if (!preserveDraft) {
+            syncingUi = true;
+            swUnlock.setChecked(TriggerContract.autoUnlock(this));
+            swBt.setChecked(TriggerContract.isBtEnabled(this));
+            swVoipAnnounce.setChecked(TriggerContract.voipAnnounce(this));
+            swVoipSound.setChecked(TriggerContract.voipSound(this));
+            syncingUi = false;
+        }
         updateStatus();
         updateBtStatus();
         renderBtDevices();
@@ -146,6 +256,7 @@ public class TriggerSettingsActivity extends Activity {
         renderUpdateState();
         renderVoipStatus();
         renderDiagnostics();
+        updateDirtyState();
         // 已连接设备详情需要实时刷新
         deviceHandler.removeCallbacks(devicePoll);
         deviceHandler.postDelayed(devicePoll, DEVICE_POLL_MS);
@@ -159,7 +270,6 @@ public class TriggerSettingsActivity extends Activity {
     }
 
     private void bindViews() {
-        swEnable = findViewById(R.id.sw_enable);
         swUnlock = findViewById(R.id.sw_unlock);
         swWatchdog = findViewById(R.id.sw_watchdog);
         swBt = findViewById(R.id.sw_bt);
@@ -171,6 +281,14 @@ public class TriggerSettingsActivity extends Activity {
         tvHint = findViewById(R.id.tv_hint);
         tvKeepAlive = findViewById(R.id.tv_keepalive);
         tvBtStatus = findViewById(R.id.tv_bt_status);
+        tvOverviewState = findViewById(R.id.tv_overview_state);
+        tvOverviewService = findViewById(R.id.tv_overview_service);
+        tvOverviewDevice = findViewById(R.id.tv_overview_device);
+        tvOverviewRoot = findViewById(R.id.tv_overview_root);
+        tvTestResult = findViewById(R.id.tv_test_result);
+        tvRootResult = findViewById(R.id.tv_root_result);
+        tvDiagSummary = findViewById(R.id.tv_diag_summary);
+        tvUnsaved = findViewById(R.id.tv_unsaved);
         etBind = findViewById(R.id.et_bind);
         etPort = findViewById(R.id.et_port);
         etRate = findViewById(R.id.et_rate);
@@ -179,43 +297,62 @@ public class TriggerSettingsActivity extends Activity {
         etPackages = findViewById(R.id.et_packages);
         etAllowedIps = findViewById(R.id.et_allowed_ips);
         llBtDevices = findViewById(R.id.ll_bt_devices);
+        bottomAction = findViewById(R.id.bottom_action);
         tvBtDevicesEmpty = findViewById(R.id.tv_bt_devices_empty);
         tvUpdateVersion = findViewById(R.id.tv_update_version);
         tvDiag = findViewById(R.id.tv_diag);
+        btnDiagExpand = findViewById(R.id.btn_diag_expand);
+        pageTitle = findViewById(R.id.page_title);
+        pageSubtitle = findViewById(R.id.page_subtitle);
+        btnServiceToggle = findViewById(R.id.btn_service_toggle);
+        btnTest = findViewById(R.id.btn_test);
+        btnRoot = findViewById(R.id.btn_root);
+        btnSave = findViewById(R.id.btn_save);
+        btnBack = findViewById(R.id.btn_back);
         tvUpdateStatus = findViewById(R.id.tv_update_status);
         pbUpdate = findViewById(R.id.pb_update);
         btnUpdate = findViewById(R.id.btn_update);
     }
 
     /**
-     * 底部导航：设置页高亮「设置」，首页/日志回到 MainActivity 对应 Tab
+     * 设置总览的四个入口，进入后只显示对应分组详情。
      */
-    /**
-     * 设置项分五个分类，每次只展示当前分类，避免一页塞满所有配置。
-     */
-    private void bindCategories() {
-        var cats = SettingsSections.CATEGORIES;
-        for (var i = 0; i < cats.length; i++) {
+    private void bindNavigation() {
+        var rows = SettingsSections.ROWS;
+        for (var i = 0; i < rows.length; i++) {
             final var index = i;
-            findViewById(cats[i]).setOnClickListener(v -> selectCategory(index));
+            findViewById(rows[i]).setOnClickListener(v ->
+                selectPage(SettingsSections.pageForRowIndex(index)));
         }
-        // 每次进入固定停在「服务」，避免分类状态被意外恢复
-        selectCategory(0);
+        btnBack.setOnClickListener(v -> leaveTo(SettingsSections.OVERVIEW));
+        selectPage(SettingsSections.OVERVIEW);
     }
 
-    private void selectCategory(int index) {
-        currentCategory = index;
-        var cats = SettingsSections.CATEGORIES;
-        var pages = SettingsSections.PAGES;
-        for (var i = 0; i < cats.length; i++) {
-            findViewById(cats[i]).setSelected(i == index);
-            findViewById(pages[i]).setVisibility(i == index ? View.VISIBLE : View.GONE);
+    private void selectPage(int page) {
+        if (page < 0 || page >= SettingsSections.PAGES.length) {
+            return;
         }
+        currentPage = page;
+        for (var group : SettingsSections.PAGES) {
+            for (var id : group) {
+                findViewById(id).setVisibility(View.GONE);
+            }
+        }
+        for (var id : SettingsSections.PAGES[page]) {
+            findViewById(id).setVisibility(View.VISIBLE);
+        }
+        pageTitle.setText(SettingsSections.TITLES[page]);
+        pageSubtitle.setText(SettingsSections.SUBTITLES[page]);
+        btnBack.setVisibility(page == SettingsSections.OVERVIEW ? View.GONE : View.VISIBLE);
         var scroll = findViewById(R.id.scroll);
         if (scroll != null) {
             scroll.scrollTo(0, 0);
         }
-        if (index == 4) {
+        bottomAction.setVisibility(SettingsSections.isConfigPage(page)
+            ? View.VISIBLE : View.GONE);
+        updateDirtyState();
+        updateOverview();
+        if (page == SettingsSections.DEVICE) {
             renderDiagnostics();
         }
     }
@@ -223,8 +360,12 @@ public class TriggerSettingsActivity extends Activity {
     private void bindBottomNav() {
         findViewById(R.id.tab_home).setOnClickListener(v -> openMain(MainActivity.TAB_HOME));
         findViewById(R.id.tab_log).setOnClickListener(v -> openMain(MainActivity.TAB_LOG));
-        // 已经在设置页，点击「设置」仅回到顶部
+        // 已经在设置页：详情回到总览，总览回到顶部
         findViewById(R.id.tab_settings).setOnClickListener(v -> {
+            if (currentPage != SettingsSections.OVERVIEW) {
+                leaveTo(SettingsSections.OVERVIEW);
+                return;
+            }
             var scroll = findViewById(R.id.scroll);
             if (scroll != null) {
                 scroll.scrollTo(0, 0);
@@ -234,6 +375,10 @@ public class TriggerSettingsActivity extends Activity {
     }
 
     private void openMain(int tab) {
+        runAfterUnsavedCheck(() -> openMainNow(tab));
+    }
+
+    private void openMainNow(int tab) {
         var intent = new Intent(this, MainActivity.class);
         intent.putExtra(MainActivity.EXTRA_TAB, tab);
         intent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP);
@@ -265,17 +410,12 @@ public class TriggerSettingsActivity extends Activity {
         var spacer = findViewById(R.id.status_bar_spacer);
         var titleBar = findViewById(R.id.title_bar);
         var scroll = findViewById(R.id.scroll);
-        var categoryBar = findViewById(R.id.category_bar);
         var tabBar = findViewById(R.id.tab_bar);
         var tabHeight = getResources().getDimensionPixelSize(R.dimen.tab_bar_height);
         var titlePaddingStart = titleBar.getPaddingStart();
         var titlePaddingEnd = titleBar.getPaddingEnd();
         var titlePaddingTop = titleBar.getPaddingTop();
         var titlePaddingBottom = titleBar.getPaddingBottom();
-        var categoryPaddingStart = categoryBar.getPaddingStart();
-        var categoryPaddingEnd = categoryBar.getPaddingEnd();
-        var categoryPaddingTop = categoryBar.getPaddingTop();
-        var categoryPaddingBottom = categoryBar.getPaddingBottom();
         var tabPaddingStart = tabBar.getPaddingStart();
         var tabPaddingEnd = tabBar.getPaddingEnd();
         var tabPaddingTop = tabBar.getPaddingTop();
@@ -287,8 +427,6 @@ public class TriggerSettingsActivity extends Activity {
             spacer.setLayoutParams(spacerParams);
             titleBar.setPaddingRelative(titlePaddingStart + bars.left, titlePaddingTop,
                 titlePaddingEnd + bars.right, titlePaddingBottom);
-            categoryBar.setPaddingRelative(categoryPaddingStart + bars.left, categoryPaddingTop,
-                categoryPaddingEnd + bars.right, categoryPaddingBottom);
             scroll.setPadding(bars.left, 0, bars.right, 0);
             tabBar.setPadding(tabPaddingStart + bars.left, tabPaddingTop,
                 tabPaddingEnd + bars.right, bars.bottom + 6);
@@ -300,7 +438,6 @@ public class TriggerSettingsActivity extends Activity {
     }
 
     private void loadSettings() {
-        swEnable.setChecked(TriggerContract.isEnabled(this));
         swUnlock.setChecked(TriggerContract.autoUnlock(this));
         swBt.setChecked(TriggerContract.isBtEnabled(this));
         swVoipAnnounce.setChecked(TriggerContract.voipAnnounce(this));
@@ -313,19 +450,22 @@ public class TriggerSettingsActivity extends Activity {
         etCallback.setText(TriggerContract.callbackHosts(this));
         etPackages.setText(TriggerContract.allowedPackages(this));
         etAllowedIps.setText(TriggerContract.allowedIps(this));
+        tvOverviewDevice.setText(Build.MODEL + " · Android " + Build.VERSION.RELEASE);
         updateStatus();
         updateBtStatus();
         renderBtDevices();
         renderVoipStatus();
         updateHint();
+        updateDirtyState();
     }
 
     private void bindActions() {
+        btnServiceToggle.setOnClickListener(v -> toggleService());
+        btnTest.setOnClickListener(v -> testStatus());
+        btnRoot.setOnClickListener(v -> checkRoot());
+        btnSave.setOnClickListener(v -> saveAndApply());
         findViewById(R.id.btn_copy_token).setOnClickListener(v -> copyToken());
         findViewById(R.id.btn_reset_token).setOnClickListener(v -> confirmResetToken());
-        findViewById(R.id.btn_save).setOnClickListener(v -> saveAndApply());
-        findViewById(R.id.btn_test).setOnClickListener(v -> testStatus());
-        findViewById(R.id.btn_root).setOnClickListener(v -> checkRoot());
         findViewById(R.id.btn_hint_toggle).setOnClickListener(v -> {
             var show = tvHint.getVisibility() != View.VISIBLE;
             tvHint.setVisibility(show ? View.VISIBLE : View.GONE);
@@ -347,59 +487,117 @@ public class TriggerSettingsActivity extends Activity {
                 toast("诊断信息已复制");
             }
         });
+        btnDiagExpand.setOnClickListener(v -> {
+            diagExpanded = !diagExpanded;
+            tvDiag.setVisibility(diagExpanded ? View.VISIBLE : View.GONE);
+            btnDiagExpand.setText(diagExpanded ? "原始诊断（收起）" : "原始诊断（展开）");
+            btnDiagExpand.setContentDescription(diagExpanded
+                ? "收起原始诊断" : "展开原始诊断");
+        });
         findViewById(R.id.btn_update_page).setOnClickListener(v ->
             UpdateManager.openReleasesPage(this));
         findViewById(R.id.btn_voip_test).setOnClickListener(v -> {
             if (!TriggerContract.voipAnnounce(this)) {
-                toast("请先打开来电播报开关");
+                toast("请先保存并应用来电播报设置");
                 return;
             }
             if (!TriggerContract.voipSound(this)) {
-                toast("声音总开关已关闭，请先打开声音再试听");
+                toast("声音总开关已关闭，请先打开并保存");
                 return;
             }
             VoipAnnouncer.preview(this);
             toast("正在试听播报");
         });
-        swVoipAnnounce.setOnCheckedChangeListener((buttonView, isChecked) -> {
-            if (syncingUi) {
-                return;
-            }
-            TriggerContract.setVoipAnnounce(this, isChecked);
-            if (isChecked) {
-                requestRuntimePermissions(false);
-            } else {
-                VoipAnnouncer.stop(this);
-            }
-            renderVoipStatus();
-        });
-        swVoipSound.setOnCheckedChangeListener((buttonView, isChecked) -> {
-            if (syncingUi) {
-                return;
-            }
-            TriggerContract.setVoipSound(this, isChecked);
-            if (!isChecked) {
-                VoipAnnouncer.silence(this);
-            }
-            VoipAnnouncer.applySoundMode(this, isChecked);
-            renderVoipStatus();
-        });
-        swEnable.setOnCheckedChangeListener((buttonView, isChecked) -> {
+
+        // 配置开关只改变当前表单；保存并应用后一次写入，避免即时保存与底部保存混用。
+        swUnlock.setOnCheckedChangeListener((buttonView, isChecked) -> {
             if (!syncingUi) {
-                saveAndApply();
+                updateDirtyState();
             }
         });
         swBt.setOnCheckedChangeListener((buttonView, isChecked) -> {
             if (!syncingUi) {
-                saveAndApply();
+                updateDirtyState();
             }
         });
+        swVoipAnnounce.setOnCheckedChangeListener((buttonView, isChecked) -> {
+            if (!syncingUi) {
+                updateDirtyState();
+            }
+        });
+        swVoipSound.setOnCheckedChangeListener((buttonView, isChecked) -> {
+            if (!syncingUi) {
+                updateDirtyState();
+            }
+        });
+        // 看门狗是安装/卸载操作，不是配置项，保持立即执行。
         swWatchdog.setOnCheckedChangeListener((buttonView, isChecked) -> {
             if (!syncingUi) {
                 toggleWatchdog(isChecked);
             }
         });
+
+        watch(etBind);
+        watch(etPort);
+        watch(etRate);
+        watch(etTimeout);
+        watch(etCallback);
+        watch(etPackages);
+        watch(etAllowedIps);
     }
+
+    private void watch(EditText field) {
+        field.addTextChangedListener(new TextWatcher() {
+            @Override
+            public void beforeTextChanged(CharSequence s, int start, int count, int after) {
+            }
+
+            @Override
+            public void onTextChanged(CharSequence s, int start, int before, int count) {
+            }
+
+            @Override
+            public void afterTextChanged(Editable s) {
+                if (!syncingUi) {
+                    updateDirtyState();
+                }
+            }
+        });
+    }
+
+    /**
+     * 配置页统一暂存：按钮只反映“有未保存改动”，不再即时写配置。
+     */
+    private void updateDirtyState() {
+        if (btnSave == null || bottomAction == null) {
+            return;
+        }
+        var dirty = hasUnsavedChanges();
+        var visible = SettingsSections.isConfigPage(currentPage);
+        bottomAction.setVisibility(visible ? View.VISIBLE : View.GONE);
+        btnSave.setEnabled(visible && dirty && !serviceBusy);
+        btnSave.setText(dirty ? R.string.settings_save_apply : R.string.settings_saved);
+        tvUnsaved.setVisibility(visible && dirty ? View.VISIBLE : View.GONE);
+    }
+
+    private boolean hasUnsavedChanges() {
+        return swUnlock.isChecked() != TriggerContract.autoUnlock(this)
+            || swBt.isChecked() != TriggerContract.isBtEnabled(this)
+            || swVoipAnnounce.isChecked() != TriggerContract.voipAnnounce(this)
+            || swVoipSound.isChecked() != TriggerContract.voipSound(this)
+            || !sameText(etBind, TriggerContract.bind(this))
+            || !sameText(etPort, String.valueOf(TriggerContract.port(this)))
+            || !sameText(etRate, String.valueOf(TriggerContract.rateLimit(this)))
+            || !sameText(etTimeout, String.valueOf(TriggerContract.timeoutSec(this)))
+            || !sameText(etCallback, TriggerContract.callbackHosts(this))
+            || !sameText(etPackages, TriggerContract.allowedPackages(this))
+            || !sameText(etAllowedIps, TriggerContract.allowedIps(this));
+    }
+
+    private static boolean sameText(EditText field, String value) {
+        return field.getText().toString().trim().equals(value == null ? "" : value.trim());
+    }
+
 
     private void copyToken() {
         var manager = (ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
@@ -426,9 +624,55 @@ public class TriggerSettingsActivity extends Activity {
     }
 
     /**
-     * 保存配置并按需重启服务
+     * 总览上的服务操作：启动/停止是命令，不使用配置脏状态。
      */
-    private void saveAndApply() {
+    private void toggleService() {
+        if (serviceBusy) {
+            return;
+        }
+        var active = TriggerContract.isEnabled(this) || TriggerContract.isBtEnabled(this);
+        if (active) {
+            setServiceBusy(true);
+            syncingUi = true;
+            swBt.setChecked(false);
+            syncingUi = false;
+            TriggerContract.prefs(this).edit()
+                .putBoolean(TriggerContract.K_ENABLED, false)
+                .putBoolean(TriggerContract.K_BT_ENABLED, false)
+                .commit();
+            TriggerService.stop(this);
+            updateStatus();
+            updateDirtyState();
+            new Handler(Looper.getMainLooper()).postDelayed(() -> {
+                setServiceBusy(false);
+                updateStatus();
+                updateBtStatus();
+            }, 400);
+            toast("服务已停止");
+            return;
+        }
+
+        setServiceBusy(true);
+        TriggerContract.setEnabled(this, true);
+        requestRuntimePermissions(TriggerContract.isBtEnabled(this));
+        ensureKeepAliveOnEnable();
+        new Handler(Looper.getMainLooper()).postDelayed(() -> {
+            try {
+                TriggerService.start(this);
+            } catch (Throwable e) {
+                toast("启动服务失败: " + e.getMessage());
+            }
+        }, 500);
+        updateStatus();
+        new Handler(Looper.getMainLooper()).postDelayed(() -> {
+            setServiceBusy(false);
+            updateStatus();
+            updateBtStatus();
+        }, 1200);
+        toast("正在启动服务");
+    }
+
+    private void saveAndApply(String successMessage) {
         int port;
         int rate;
         int timeout;
@@ -445,16 +689,19 @@ public class TriggerSettingsActivity extends Activity {
             return;
         }
         var bind = etBind.getText().toString().trim();
+        rate = Math.max(0, Math.min(rate, 1000));
+        timeout = Math.max(5, Math.min(timeout, 120));
+        syncingUi = true;
         if (bind.isEmpty()) {
             bind = TriggerContract.DEF_BIND;
             etBind.setText(bind);
         }
-        rate = Math.max(0, Math.min(rate, 1000));
-        timeout = Math.max(5, Math.min(timeout, 120));
         etRate.setText(String.valueOf(rate));
         etTimeout.setText(String.valueOf(timeout));
+        syncingUi = false;
 
-        var enabled = swEnable.isChecked();
+        // 服务启停是操作，配置表单只负责持久化当前值。
+        var enabled = TriggerContract.isEnabled(this);
         var btEnabled = swBt.isChecked();
         TriggerContract.prefs(this).edit()
             .putBoolean(TriggerContract.K_ENABLED, enabled)
@@ -470,6 +717,8 @@ public class TriggerSettingsActivity extends Activity {
                 etPackages.getText().toString().trim())
             .putString(TriggerContract.K_ALLOWED_IPS,
                 etAllowedIps.getText().toString().trim())
+            .putBoolean(TriggerContract.K_VOIP_ANNOUNCE, swVoipAnnounce.isChecked())
+            .putBoolean(TriggerContract.K_VOIP_SOUND, swVoipSound.isChecked())
             .commit();
 
         // 先停止旧服务，确保新地址/端口/蓝牙状态生效
@@ -488,13 +737,44 @@ public class TriggerSettingsActivity extends Activity {
                 }
             }, 500);
         }
+        if (!swVoipAnnounce.isChecked()) {
+            VoipAnnouncer.stop(this);
+        }
+        if (!swVoipSound.isChecked()) {
+            VoipAnnouncer.silence(this);
+        }
+        VoipAnnouncer.applySoundMode(this, swVoipSound.isChecked());
         updateHint();
+        updateDirtyState();
+        renderVoipStatus();
+        updateStatus();
         new Handler(Looper.getMainLooper()).postDelayed(() -> {
             updateStatus();
             updateBtStatus();
         }, 1200);
-        toast("已保存");
+        toast(successMessage);
     }
+
+    private void saveAndApply() {
+        saveAndApply("已保存");
+    }
+
+    private void setServiceBusy(boolean busy) {
+        serviceBusy = busy;
+        if (btnServiceToggle != null) {
+            btnServiceToggle.setEnabled(!busy);
+            if (busy) {
+                btnServiceToggle.setText("处理中…");
+            } else {
+                updateServiceButton();
+            }
+        }
+        if (btnTest != null) {
+            btnTest.setEnabled(!busy && !testBusy);
+        }
+        updateDirtyState();
+    }
+
 
     /**
      * 开启外部触发时顺带申请保活：root 静默加白名单；看门狗按开关状态安装
@@ -571,6 +851,9 @@ public class TriggerSettingsActivity extends Activity {
         swWatchdog.setEnabled(!busy);
         findViewById(R.id.btn_battery).setEnabled(!busy);
         findViewById(R.id.btn_autostart).setEnabled(!busy);
+        if (btnRoot != null) {
+            btnRoot.setEnabled(!busy && !testBusy);
+        }
     }
 
     /**
@@ -588,6 +871,9 @@ public class TriggerSettingsActivity extends Activity {
                 swWatchdog.setChecked(installed);
                 syncingUi = false;
                 swWatchdog.setEnabled(!keepAliveBusy);
+                rootChecked = true;
+                rootAvailable = root;
+                batteryWhitelisted = battery;
 
                 String watchdog;
                 if (!root) {
@@ -599,6 +885,7 @@ public class TriggerSettingsActivity extends Activity {
                 } else {
                     watchdog = running ? "运行中" : "已安装，等待下次检查";
                 }
+                watchdogState = watchdog;
                 tvKeepAlive.setText("root: " + (root ? "已授权" : "未授权")
                     + "\n看门狗: " + watchdog
                     + "\n电池白名单: " + (battery ? "已加入" : "未加入"));
@@ -717,20 +1004,104 @@ public class TriggerSettingsActivity extends Activity {
         showDialog("蓝牙触发协议", text);
     }
 
+    /**
+     * 测试连接不再弹出原始 JSON：结果写回总览卡片，保持上下文。
+     */
     private void testStatus() {
+        if (testBusy) {
+            return;
+        }
+        setTestBusy(true);
         new Thread(() -> {
-            var json = TriggerApi.health(this);
-            var text = pretty(json);
-            runOnUiThread(() -> showDialog("服务状态", text));
+            try {
+                var json = TriggerApi.health(this);
+                var http = json.optBoolean("http_running");
+                var bt = json.optBoolean("bt_advertising")
+                    || json.optBoolean("bt_running");
+                var port = TriggerContract.port(this);
+                var ok = json.has("ok");
+                var text = new StringBuilder();
+                if (!http && !bt) {
+                    text.append("服务未运行 · 请先启动服务");
+                    ok = false;
+                } else {
+                    text.append(ok ? "连接正常" : "连接异常");
+                    if (http) {
+                        text.append(" · HTTP :").append(port);
+                    }
+                    if (bt) {
+                        text.append(" · BLE 已就绪");
+                    }
+                    if (!ok) {
+                        text.append(" · ").append(json.optString("error", "未返回健康状态"));
+                    }
+                }
+                final var message = text.toString();
+                final var success = ok;
+                runOnUiThread(() -> {
+                    setTestBusy(false);
+                    renderTestResult(message, success);
+                });
+            } catch (Throwable e) {
+                runOnUiThread(() -> {
+                    setTestBusy(false);
+                    renderTestResult("连接失败 · " + e.getMessage(), false);
+                });
+            }
         }, "xp-trigger-health").start();
     }
 
+    private void setTestBusy(boolean busy) {
+        testBusy = busy;
+        if (btnTest != null) {
+            btnTest.setEnabled(!busy && !serviceBusy);
+            btnTest.setText(busy ? "测试中…" : getString(R.string.settings_test_start));
+        }
+        if (btnRoot != null) {
+            btnRoot.setEnabled(!busy && !keepAliveBusy);
+        }
+    }
+
+    private void renderTestResult(String text, boolean ok) {
+        if (tvTestResult == null) {
+            return;
+        }
+        tvTestResult.setVisibility(View.VISIBLE);
+        tvTestResult.setText(text);
+        tvTestResult.setTextColor(getColor(ok ? R.color.primary : R.color.danger));
+    }
+
+    /**
+     * Root 检测只做一次内联反馈，不再 toast 后再弹服务状态。
+     */
     private void checkRoot() {
+        if (testBusy) {
+            return;
+        }
+        setTestBusy(true);
         new Thread(() -> {
-            var granted = RootShell.checkRoot(this);
+            var granted = RootShell.hasRoot(this);
+            var battery = KeepAliveHelper.isIgnoringBatteryOptimizations(this);
             runOnUiThread(() -> {
-                toast(granted ? "root 已授权" : "root 未授权或授权被拒绝");
-                testStatus();
+                setTestBusy(false);
+                rootChecked = true;
+                rootAvailable = granted;
+                batteryWhitelisted = battery;
+                if (tvOverviewRoot != null) {
+                    tvOverviewRoot.setText(granted ? "Root 已授权" : "Root 未授权");
+                    tvOverviewRoot.setTextColor(getColor(
+                        granted ? R.color.primary : R.color.danger));
+                }
+                renderTestResult(granted
+                    ? "Root 已授权 · 电池白名单" + (battery ? "已加入" : "未加入")
+                    : "Root 未授权 · 可手动授予或使用保活页的系统入口", granted);
+                if (tvRootResult != null) {
+                    tvRootResult.setVisibility(View.VISIBLE);
+                    tvRootResult.setText(granted ? "Root 已授权" : "Root 未授权");
+                    tvRootResult.setTextColor(getColor(
+                        granted ? R.color.primary : R.color.danger));
+                }
+                updateOverview();
             });
         }, "xp-trigger-root").start();
     }
@@ -740,6 +1111,7 @@ public class TriggerSettingsActivity extends Activity {
         var bt = TriggerContract.isBtEnabled(this);
         if (!http && !bt) {
             tvStatus.setText("已停止");
+            updateOverview();
             return;
         }
         var text = new StringBuilder();
@@ -762,6 +1134,68 @@ public class TriggerSettingsActivity extends Activity {
             }
         }
         tvStatus.setText(text.toString());
+        updateOverview();
+    }
+
+    /**
+     * 总览只给结论与下一步，详细配置进入分组详情。
+     */
+    private void updateOverview() {
+        if (tvOverviewState == null || tvOverviewService == null) {
+            return;
+        }
+        var http = TriggerContract.isEnabled(this);
+        var bt = TriggerContract.isBtEnabled(this);
+        var running = (http && TriggerService.isHttpRunning())
+            || (bt && (TriggerService.isBluetoothRunning()
+                || TriggerService.isBluetoothAdvertising()));
+        if (serviceBusy) {
+            tvOverviewState.setText("处理中");
+            tvOverviewState.setTextColor(getColor(R.color.text_secondary));
+        } else if (running) {
+            tvOverviewState.setText("运行中");
+            tvOverviewState.setTextColor(getColor(R.color.primary));
+        } else if (http || bt) {
+            tvOverviewState.setText("正在启动");
+            tvOverviewState.setTextColor(getColor(R.color.warning));
+        } else {
+            tvOverviewState.setText("已停止");
+            tvOverviewState.setTextColor(getColor(R.color.text_secondary));
+        }
+
+        var service = new StringBuilder();
+        if (http) {
+            service.append("HTTP :").append(TriggerContract.port(this));
+        }
+        if (bt) {
+            if (service.length() > 0) {
+                service.append(" · ");
+            }
+            service.append("BLE ")
+                .append(TriggerService.isBluetoothAdvertising() ? "广播中" : "已开启");
+        }
+        tvOverviewService.setText(service.length() == 0 ? "HTTP 与 BLE 均未开启" : service);
+        tvOverviewDevice.setText(Build.MODEL + " · Android " + Build.VERSION.RELEASE);
+        if (tvOverviewRoot != null) {
+            tvOverviewRoot.setText(rootChecked
+                ? (rootAvailable ? "Root 已授权" : "Root 未授权")
+                : "Root 检测中");
+            tvOverviewRoot.setTextColor(getColor(!rootChecked ? R.color.text_hint
+                : rootAvailable ? R.color.primary : R.color.danger));
+        }
+        updateServiceButton();
+    }
+
+    private void updateServiceButton() {
+        if (btnServiceToggle == null) {
+            return;
+        }
+        if (serviceBusy) {
+            btnServiceToggle.setText("处理中…");
+            return;
+        }
+        var active = TriggerContract.isEnabled(this) || TriggerContract.isBtEnabled(this);
+        btnServiceToggle.setText(active ? "停止服务" : "启动服务");
     }
 
     private void updateBtStatus() {
@@ -966,14 +1400,21 @@ public class TriggerSettingsActivity extends Activity {
      * 诊断页：把真正影响三态接听/挂断的运行时信息集中到一处，便于远程排查。
      */
     private void renderDiagnostics() {
-        if (tvDiag == null || currentCategory != 4) {
+        if (tvDiag == null || tvDiagSummary == null || btnDiagExpand == null
+            || currentPage != SettingsSections.DEVICE) {
             return;
         }
         // su 检测可能等待 10 秒，绝不能放在 UI 线程；这里只读缓存并后台刷新
         RootShell.checkRootAsync(this);
+        var battery = KeepAliveHelper.isIgnoringBatteryOptimizations(this);
+        batteryWhitelisted = battery;
         try {
             var state = TriggerApi.state(this);
             var voip = state.optJSONObject("voip");
+            var root = state.optBoolean("root");
+            rootChecked = true;
+            rootAvailable = root;
+            var wechat = state.optBoolean("wechat_installed");
             var sb = new StringBuilder();
             sb.append("版本      ").append(BuildConfig.VERSION_NAME)
                 .append(" (").append(BuildConfig.VERSION_CODE).append(")\n");
@@ -981,8 +1422,8 @@ public class TriggerSettingsActivity extends Activity {
                 .append("  HTTP ").append(state.optBoolean("http_running") ? "运行" : "停止")
                 .append("  BLE ").append(state.optBoolean("bt_running") ? "运行" : "停止")
                 .append("\n");
-            sb.append("Root      ").append(state.optBoolean("root") ? "可用" : "不可用")
-                .append("  微信 ").append(state.optBoolean("wechat_installed") ? "已安装" : "未安装")
+            sb.append("Root      ").append(root ? "可用" : "不可用")
+                .append("  微信 ").append(wechat ? "已安装" : "未安装")
                 .append("\n");
             var hookAt = state.optLong("last_hook_report", 0L);
             var hookText = hookAt <= 0 ? "无"
@@ -1006,9 +1447,29 @@ public class TriggerSettingsActivity extends Activity {
             sb.append("          POST /v1/answer  /v1/end\n");
             sb.append("Token     ").append(mask(TriggerContract.token(this))).append("\n");
             tvDiag.setText(sb.toString());
+
+            var batteryText = battery ? "已加入" : "未加入";
+            var summary = new StringBuilder();
+            summary.append(Build.MANUFACTURER).append(" ").append(Build.MODEL)
+                .append(" · Android ").append(Build.VERSION.RELEASE).append("\n");
+            summary.append("Root ").append(root ? "已授权" : "未授权")
+                .append(" · 电池白名单").append(batteryText).append("\n");
+            summary.append("看门狗 ").append(watchdogState).append("\n");
+            summary.append("微信 ").append(wechat ? "已安装" : "未安装")
+                .append(" · Hook ").append(hookText).append("\n");
+            summary.append("服务 ").append(
+                state.optBoolean("http_running") || state.optBoolean("bt_running")
+                    ? "运行中" : "已停止")
+                .append(" · ").append(tvStatus.getText());
+            tvDiagSummary.setText(summary.toString());
         } catch (Throwable e) {
+            tvDiagSummary.setText("诊断读取失败：" + e.getMessage());
             tvDiag.setText("诊断读取失败：" + e);
         }
+        tvDiag.setVisibility(diagExpanded ? View.VISIBLE : View.GONE);
+        btnDiagExpand.setText(diagExpanded ? "原始诊断（收起）" : "原始诊断（展开）");
+        btnDiagExpand.setContentDescription(diagExpanded
+            ? "收起原始诊断" : "展开原始诊断");
     }
 
     private static String mask(String value) {

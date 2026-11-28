@@ -52,20 +52,13 @@
             android:textColor="@color/text_hint" />
     </LinearLayout>
 
-    <TextView
+    <ImageView
         android:id="@+id/btn_shortcut"
-        style="@style/Text.Label"
-        android:layout_width="wrap_content"
-        android:layout_height="@dimen/touch_min"
-        android:background="@drawable/bg_button_ghost"
-        android:clickable="true"
-        android:focusable="true"
-        android:gravity="center"
-        android:minWidth="56dp"
-        android:paddingStart="10dp"
-        android:paddingEnd="10dp"
-        android:text="@string/action_shortcut_short"
-        android:textColor="@color/primary" />
+        style="@style/IconButton"
+        android:layout_marginStart="2dp"
+        android:contentDescription="@string/action_shortcut_short"
+        android:src="@drawable/ic_phone"
+        android:tint="@color/primary" />
 
     <ImageView
         android:id="@+id/btn_more"

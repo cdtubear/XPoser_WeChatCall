@@ -50,6 +50,24 @@
     <string name="tab_log">日志</string>
     <string name="tab_settings">设置</string>
 
+    <!-- 设置总览与分组 -->
+    <string name="settings_subtitle_overview">状态、设备与连接</string>
+    <string name="settings_title_connection">连接与触发</string>
+    <string name="settings_subtitle_connection">HTTP、Token、蓝牙、回调与限流</string>
+    <string name="settings_title_call">来电与播报</string>
+    <string name="settings_subtitle_call">联系人播报、声音与试听</string>
+    <string name="settings_title_device">设备与诊断</string>
+    <string name="settings_subtitle_device">Root、保活权限与原始诊断</string>
+    <string name="settings_title_about">关于与更新</string>
+    <string name="settings_subtitle_about">版本、更新与项目主页</string>
+    <string name="settings_unsaved">有未保存改动</string>
+    <string name="settings_saved">已保存</string>
+    <string name="settings_save_apply">保存并应用</string>
+    <string name="settings_test_start">测试连接</string>
+    <string name="settings_testing">测试中…</string>
+    <string name="settings_service_start">启动服务</string>
+    <string name="settings_service_stop">停止服务</string>
+
     <string name="empty_search">没有找到匹配的好友</string>
     <string name="search_hint">搜索备注或 wxid</string>
 
