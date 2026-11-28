@@ -5,7 +5,7 @@
 [![XposedModule](https://img.shields.io/badge/XposedModule-repo-green)](https://github.com/Xposed-Modules-Repo)
 [![Build APK](https://github.com/cdtubear/XPoser_WeChatCall/actions/workflows/build-apk.yml/badge.svg)](https://github.com/cdtubear/XPoser_WeChatCall/actions/workflows/build-apk.yml)
 
-当前版本：**1.2.2**。本版本将设置页重构为“总览 + 分组详情”，统一配置保存模型，并优化设备摘要与诊断入口，详见 [CHANGELOG.md](CHANGELOG.md)。
+当前版本：**1.2.3**。默认限流调整为 60 次/分钟，覆盖查询来电、接听、回查与重试的连续操作。
 
 通过 Xposed 模块，在桌面为好友创建独立图标，点击图标一步直达微信视频/语音通话
 
@@ -115,6 +115,8 @@ Authorization: Bearer <TOKEN>
 也接受 `X-Xp-Token: <TOKEN>`。Token 可在设置页复制或重置；重置后旧调用方立即失效。
 
 设置页「连接」分类可填写**来源 IP 白名单**（逗号分隔，支持 `192.168.8.10` 和 `192.168.8.0/24`）。留空不限制来源，但仍必须携带 Token。
+
+同一来源 IP 默认限流为 **60 次/分钟**，按 60 秒滑动窗口计算；`0` 表示不限流。一次完整接听通常消耗 3～5 次请求，60 次可覆盖单设备连续操作与多页面查看。
 
 ### 接口
 

@@ -632,7 +632,7 @@ components:
             error: UNAUTHORIZED
             message: invalid token
     RateLimited:
-      description: 同一来源 IP 每分钟请求数超过设置页限制（默认 10 次/分钟）
+      description: 同一来源 IP 每分钟请求数超过设置页限制（默认 60 次/分钟）
       content:
         application/json:
           schema:

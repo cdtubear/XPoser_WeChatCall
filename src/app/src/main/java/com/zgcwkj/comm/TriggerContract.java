@@ -110,6 +110,7 @@ public final class TriggerContract {
     public static final String K_TOKEN = "token";
     public static final String K_AUTO_UNLOCK = "auto_unlock";
     public static final String K_RATE_LIMIT = "rate_limit";
+    private static final String K_RATE_LIMIT_MIGRATED = "rate_limit_60_migrated";
     public static final String K_TIMEOUT = "timeout_sec";
     public static final String K_CALLBACK_HOSTS = "callback_hosts";
     public static final String K_ALLOWED_PACKAGES = "allowed_packages";
@@ -130,7 +131,8 @@ public final class TriggerContract {
     public static final String DEF_BIND = "0.0.0.0";
     public static final int DEF_PORT = 8790;
     public static final boolean DEF_AUTO_UNLOCK = true;
-    public static final int DEF_RATE_LIMIT = 10;
+    // 60 次/分钟：正常接听流程只消耗 3～5 次，给多页面、重试和短时突发留足余量
+    public static final int DEF_RATE_LIMIT = 60;
     public static final int DEF_TIMEOUT = 30;
     public static final boolean DEF_BT_ENABLED = false;
     public static final boolean DEF_VOIP_ANNOUNCE = true;
@@ -189,7 +191,20 @@ public final class TriggerContract {
     }
 
     public static int rateLimit(Context context) {
-        return prefs(context).getInt(K_RATE_LIMIT, DEF_RATE_LIMIT);
+        var prefs = prefs(context);
+        var current = prefs.getInt(K_RATE_LIMIT, DEF_RATE_LIMIT);
+
+        // 旧版本默认值是 10，1.2.3 提升到 30；升级安装后 SharedPreferences
+        // 仍会保留旧值。仅迁移一次，把旧默认值抬到 60，不覆盖用户明确设置的其他值。
+        if (!prefs.getBoolean(K_RATE_LIMIT_MIGRATED, false)) {
+            if (current == 10 || current == 30) current = DEF_RATE_LIMIT;
+            prefs.edit()
+                .putInt(K_RATE_LIMIT, current)
+                .putBoolean(K_RATE_LIMIT_MIGRATED, true)
+                .apply();
+        }
+
+        return current;
     }
 
     public static int timeoutSec(Context context) {
