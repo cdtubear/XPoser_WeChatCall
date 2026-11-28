@@ -192,6 +192,14 @@ public final class IncomingCallUi {
      * 依次尝试按钮自身、可点击祖先、按坐标派发触摸事件，尽量兼容各家 ROM 的控件结构。
      */
     public static boolean accept(Activity activity) {
+        return accept(activity, 0);
+    }
+
+    /**
+     * 第 attempt 次接听尝试。图标式按钮在不同 ROM / 微信版本上的位置会漂移，
+     * 每次换一个候选坐标，避免连续 4 次点在同一个空点上。
+     */
+    public static boolean accept(Activity activity, int attempt) {
         if (activity == null) {
             return false;
         }
@@ -209,8 +217,8 @@ public final class IncomingCallUi {
             return false;
         }
         // 图标式接听键：优先用实测比例坐标，几何查找容易误点到整块底部布局
-        if (tapAnswerByRatio(activity)) {
-            LogHelp.i(TAG, "voip accept: ratio tap ok");
+        if (tapAnswerByRatio(activity, attempt)) {
+            LogHelp.i(TAG, "voip accept: ratio tap ok attempt=" + attempt);
             return true;
         }
         target = findAnswerByGeometry(activity);
@@ -679,30 +687,41 @@ public final class IncomingCallUi {
         }
     }
 
+    /** 全屏来电绿色接听键的候选比例，按实际分辨率换算 */
+    private static final float[][] ANSWER_TAP_RATIOS = {
+        {0.789f, 0.855f},
+        {0.800f, 0.870f},
+        {0.778f, 0.838f},
+        {0.820f, 0.888f}
+    };
+
     /**
-     * 兜底：接听按钮只有图标时，按界面比例点击右下角的绿色接听键
+     * 兜底：接听按钮只有图标时，按界面比例点击右下角的绿色接听键。
+     * 返回真实触摸是否被窗口消费，不再无条件返回 true。
      */
-    private static boolean tapAnswerByRatio(Activity activity) {
+    private static boolean tapAnswerByRatio(Activity activity, int attempt) {
         try {
             var decor = activity.getWindow() == null
                 ? null : activity.getWindow().getDecorView();
             if (decor == null || decor.getWidth() <= 0 || decor.getHeight() <= 0) {
                 return false;
             }
-            // 实测 1080x2340 微信来电：绿色接听键中心约在 (852, 2001)
-            var x = decor.getWidth() * 0.789f;
-            var y = decor.getHeight() * 0.855f;
+            var ratio = ANSWER_TAP_RATIOS[
+                Math.floorMod(attempt, ANSWER_TAP_RATIOS.length)];
+            var x = decor.getWidth() * ratio[0];
+            var y = decor.getHeight() * ratio[1];
             var downTime = SystemClock.uptimeMillis();
             var down = MotionEvent.obtain(downTime, downTime,
                 MotionEvent.ACTION_DOWN, x, y, 0);
             var up = MotionEvent.obtain(downTime, downTime + 40,
                 MotionEvent.ACTION_UP, x, y, 0);
-            decor.dispatchTouchEvent(down);
-            decor.dispatchTouchEvent(up);
+            var consumed = decor.dispatchTouchEvent(down);
+            consumed = decor.dispatchTouchEvent(up) || consumed;
             down.recycle();
             up.recycle();
-            LogHelp.i(TAG, "voip accept: ratio tap " + (int) x + "," + (int) y);
-            return true;
+            LogHelp.i(TAG, "voip accept: ratio tap " + (int) x + "," + (int) y
+                + " attempt=" + attempt + " consumed=" + consumed);
+            return consumed;
         } catch (Throwable e) {
             LogHelp.w(TAG, "voip accept ratio failed: " + e);
             return false;

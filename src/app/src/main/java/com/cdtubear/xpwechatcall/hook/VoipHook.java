@@ -206,6 +206,8 @@ public final class VoipHook {
     /** 微信来电/通话中通知上的操作按钮，悬浮通知和最小化时直接用它接听/挂断 */
     private static volatile Notification.Action[] sCallActions = new Notification.Action[0];
     private static volatile boolean sPendingAnswer;
+    /** 开始执行接听前是否已经在通话音频模式，用于避免把响铃误判成已接听 */
+    private static volatile boolean sAnswerAudioInCallBefore;
     /** 待接听命令属于哪一通电话，换来电时必须丢弃旧命令 */
     private static volatile String sPendingAnswerId = "";
     /** 当前命令租约 ID；执行结束（成功或失败）后 ACK，避免微信进程重启丢命令 */
@@ -819,7 +821,10 @@ public final class VoipHook {
             sPendingCommandId = "";
             return;
         }
-        if (IncomingCallMonitor.isAnswered()) {
+        if (attempt == 0) {
+            sAnswerAudioInCallBefore = IncomingCallMonitor.isAudioInCall(app);
+        }
+        if (answerConfirmed(app)) {
             reportAndAck(app, id, TriggerContract.VS_ANSWERED,
                 "answer confirmed by audio mode");
             return;
@@ -830,14 +835,22 @@ public final class VoipHook {
         sLastSurface = surface;
         var sent = false;
         log("voip answer surface=" + surface + " focused=" + focused
+            + " audioInCall=" + IncomingCallMonitor.isAudioInCall(app)
             + " attempt=" + attempt);
         if (attempt >= 4) {
             reportAndAck(app, id,
                 TriggerContract.VS_ANSWER_FAILED, "answer retry limit");
             return;
         }
-        if (focused) {
-            sent = IncomingCallUi.accept(activity);
+
+        // 通知栏「接听」是微信官方入口，锁屏、无焦点和全屏页面都能用。
+        // 旧逻辑先按坐标点全屏，派发成功就误判为已接听，反而不再走这里。
+        if (attempt == 0 || attempt == 2) {
+            sent = sendCallNotificationAction(true);
+            log("voip answer notification-first=" + sent + " attempt=" + attempt);
+        }
+        if (!sent && focused) {
+            sent = IncomingCallUi.accept(activity, attempt);
             log("voip answer direct focused=" + sent + " attempt=" + attempt);
         }
         if (!sent && IncomingCallUi.SURFACE_BANNER.equals(surface)) {
@@ -867,7 +880,22 @@ public final class VoipHook {
             log("voip answer notification=" + sent + " attempt=" + attempt);
         }
         if (!sent && usable) {
-            sent = IncomingCallUi.accept(activity);
+            // 页面没有焦点时，盲点全屏坐标很容易“派发成功但没接起来”。
+            // 先把通话页拉回前台，下一轮再点，避免连续 4 次空点。
+            if (!focused && attempt <= 1 && bringCallToFront(app)) {
+                log("voip answer bring page before click attempt=" + attempt);
+                sPendingAnswer = true;
+                sPendingAnswerId = id;
+                sAnswerHandler.postDelayed(() -> {
+                    if (!sPendingAnswer) {
+                        return;
+                    }
+                    sPendingAnswer = false;
+                    performAnswer(app, id, sCallActivity.get(), attempt + 1);
+                }, 1_500L);
+                return;
+            }
+            sent = IncomingCallUi.accept(activity, attempt);
             log("voip answer direct background=" + sent + " attempt=" + attempt);
         }
         if (!sent && attempt == 0
@@ -887,13 +915,13 @@ public final class VoipHook {
                             return;
                         }
                         sPendingAnswer = false;
-                        if (IncomingCallMonitor.isAnswered()) {
+                        if (answerConfirmed(app)) {
                             reportAndAck(app, id, TriggerContract.VS_ANSWERED,
                                 "answer confirmed by audio mode");
                             return;
                         }
                         performAnswer(app, id, sCallActivity.get(), attempt + 1);
-                    }, 1_200L);
+                    }, 1_500L);
                     return;
                 }
                 sPendingAnswer = false;
@@ -904,7 +932,7 @@ public final class VoipHook {
             return;
         }
         sAnswerHandler.postDelayed(() -> {
-            if (IncomingCallMonitor.isAnswered()) {
+            if (answerConfirmed(app)) {
                 reportAndAck(app, id, TriggerContract.VS_ANSWERED,
                     "answer confirmed by audio mode");
                 return;
@@ -915,7 +943,19 @@ public final class VoipHook {
                 reportAndAck(app, id,
                     TriggerContract.VS_ANSWER_FAILED, "answer not confirmed");
             }
-        }, 1_800L);
+        }, 2_200L);
+    }
+
+    /**
+     * 音频模式切换是接听成功的唯一可靠信号。Hook 已经能上报 answered；
+     * 如果 Hook 没触发，但接听前不是通话模式、接听后变成通话模式，也判定成功。
+     */
+    private static boolean answerConfirmed(Context app) {
+        if (IncomingCallMonitor.isAnswered()) {
+            return true;
+        }
+        return !sAnswerAudioInCallBefore
+            && IncomingCallMonitor.isAudioInCall(app);
     }
 
     /**

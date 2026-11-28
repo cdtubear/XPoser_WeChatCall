@@ -5,7 +5,7 @@
 [![XposedModule](https://img.shields.io/badge/XposedModule-repo-green)](https://github.com/Xposed-Modules-Repo)
 [![Build APK](https://github.com/cdtubear/XPoser_WeChatCall/actions/workflows/build-apk.yml/badge.svg)](https://github.com/cdtubear/XPoser_WeChatCall/actions/workflows/build-apk.yml)
 
-当前版本：**1.2.3**。默认限流调整为 60 次/分钟，覆盖查询来电、接听、回查与重试的连续操作。
+当前版本：**1.2.4**。默认限流为 60 次/分钟；本版修复来电接听可靠性，优先使用通知栏官方接听入口并在音频模式确认后才上报成功。
 
 通过 Xposed 模块，在桌面为好友创建独立图标，点击图标一步直达微信视频/语音通话
 
